@@ -11,6 +11,8 @@
 #include <string>
 #include <wrl.h>
 #include <shellapi.h>
+#include <fstream>
 
 #define mClientWidth 800
 #define mClientHeight 600
+#define Pi 3.1415926535

@@ -21,6 +21,13 @@ private:
 		XMFLOAT4 color;
 	};
 
+	struct SceneConstantBuffer
+	{
+		XMFLOAT4X4 worldViewProjMatrix;
+		float padding[48]; // Padding so the constant buffer is 256-byte aligned.
+	};
+	static_assert((sizeof(SceneConstantBuffer) % 256) == 0, "Constant Buffer size must be 256-byte aligned");
+
 	bool useWarpDevice;
 	float aspectRatio;
 	std::wstring assetsPath;
@@ -46,20 +53,36 @@ private:
 
 	ComPtr<ID3D12Resource> renderTargets[swapChainBufferCount];
 	ComPtr<ID3D12DescriptorHeap> rtvHeap = nullptr;
+	ComPtr<ID3D12DescriptorHeap> cbvHeap = nullptr;
 	UINT rtvDescriptorSize;
 
 	ComPtr<ID3D12RootSignature> rootSignature = nullptr;
 
 	ComPtr<ID3D12Resource> vertexBuffer = nullptr;
+	ComPtr<ID3D12Resource> indexBuffer = nullptr;
 	D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
+	D3D12_INDEX_BUFFER_VIEW indexBufferView;
 
 	CD3DX12_VIEWPORT viewport;
 	CD3DX12_RECT scissorRect;
+
+	ComPtr<ID3D12Resource> constantBuffer;
+	SceneConstantBuffer constantBufferData;
+	UINT8* pCbvDataBegin;
 
 	UINT frameIndex;
 	HANDLE fenceEvent;
 	ComPtr<ID3D12Fence> fence;
 	UINT64 fenceValue;
+
+	XMFLOAT4X4 mWorld = { 1.0f,0.0f,0.0f,0.0f,0.0f,1.0f,0.0f,0.0f, 0.0f,0.0f,1.0f,0.0f, 0.0f,0.0f,0.0f,1.0f};
+	XMFLOAT4X4 mView = { 1.0f,0.0f,0.0f,0.0f,0.0f,1.0f,0.0f,0.0f, 0.0f,0.0f,1.0f,0.0f, 0.0f,0.0f,0.0f,1.0f };
+	XMFLOAT4X4 mProj = { 1.0f,0.0f,0.0f,0.0f,0.0f,1.0f,0.0f,0.0f, 0.0f,0.0f,1.0f,0.0f, 0.0f,0.0f,0.0f,1.0f };
+	XMMATRIX worldViewProj;
+	std::vector<Vertex> geometryVertices;
+	std::vector<std::uint16_t> geometryIndices;
+
+
 
 private:
 	std::wstring GetAssetFullPath(LPCWSTR assetName);
@@ -77,15 +100,18 @@ private:
 	void EnumAdapter();
 	void CreateCommandObjects();
 	void CreateSwapChain();
-	void CreateRtv();
+	void CreateRtvAndCbv();
 	void CreateRootSignature();
 	void CreatePipelineState();
 	void CreateVertexBuffer();
+	void CreateConstantBuffer();
 	void CreateSynObject();
 	void WaitForPreviousFrame();
 	void PopulateCommandList();
+	void CreateWorldViewProj();
 
 	void OnRender();
+	void OnUpdate();
 	void OnDestroy();
 
 public:
@@ -95,6 +121,18 @@ public:
 		scissorRect(0, 0, static_cast<LONG>(mClientWidth), static_cast<LONG>(mClientHeight))
 	{
 		app = this;
+		mWorld = { 1.0f,0.0f,0.0f,0.0f,
+				   0.0f,1.0f,0.0f,0.0f,
+				   0.0f,0.0f,1.0f,0.0f,
+				   0.0f,0.0f,0.0f,1.0f };
+		mView = { 1.0f,0.0f,0.0f,0.0f,
+				   0.0f,1.0f,0.0f,0.0f,
+				   0.0f,0.0f,1.0f,0.0f,
+				   0.0f,0.0f,0.0f,1.0f };
+		mProj = { 1.0f,0.0f,0.0f,0.0f,
+				   0.0f,1.0f,0.0f,0.0f,
+				   0.0f,0.0f,1.0f,0.0f,
+				   0.0f,0.0f,0.0f,1.0f };
 	}
 
 	//给外部调用的接口
