@@ -20,33 +20,33 @@ void DxApp::OnRender()
 
 void DxApp::OnUpdate()
 {
-	float mTheta = 1.5f * XM_PI;
-	float mPhi = XM_PIDIV4;
-	float mRadius = 5.0f;
-	// Convert Spherical to Cartesian coordinates.
-	float x = mRadius * sinf(mPhi) * cosf(mTheta);
-	float z = mRadius * sinf(mPhi) * sinf(mTheta);
-	float y = mRadius * cosf(mPhi);
+	//float mTheta = 1.5f * XM_PI;
+	//float mPhi = XM_PIDIV4;
+	//float mRadius = 5.0f;
+	//// Convert Spherical to Cartesian coordinates.
+	//float x = mRadius * sinf(mPhi) * cosf(mTheta);
+	//float z = mRadius * sinf(mPhi) * sinf(mTheta);
+	//float y = mRadius * cosf(mPhi);
 
-	// Build the view matrix.
-	XMVECTOR pos = XMVectorSet(-30, 140, 90, 1.0f);
-	XMVECTOR target = XMVectorSet(-30.766044439721629, 139.35721238626465, 90, 1.0f);
-	XMVECTOR up = XMVectorSet(0.0, 0.0f, 1.0f, 0.0f);
+	//// Build the view matrix.
+	//XMVECTOR pos = XMVectorSet(-30, 140, 90, 1.0f);
+	//XMVECTOR target = XMVectorSet(-30.766044439721629, 139.35721238626465, 90, 1.0f);
+	//XMVECTOR up = XMVectorSet(0.0, 0.0f, 1.0f, 0.0f);
 
-	XMMATRIX view = XMMatrixLookAtLH(pos, target, up);
-	XMStoreFloat4x4(&mView, view);
+	//XMMATRIX view = XMMatrixLookAtLH(pos, target, up);
+	//XMStoreFloat4x4(&mView, view);
 
-	XMMATRIX world = { 1,0,0,0,0,1,0,0,0,0,1,0,-190,20,50,1 };
-	XMMATRIX P = XMMatrixPerspectiveFovLH(0.25f * Pi, aspectRatio, 1.0f, 1000.0f);
-	XMStoreFloat4x4(&mProj, P);
-	XMMATRIX proj = XMLoadFloat4x4(&mProj);
+	//XMMATRIX world = { 1,0,0,0,0,1,0,0,0,0,1,0,-190,20,50,1 };
+	//XMMATRIX P = XMMatrixPerspectiveFovLH(0.25f * Pi, aspectRatio, 1.0f, 1000.0f);
+	//XMStoreFloat4x4(&mProj, P);
+	//XMMATRIX proj = XMLoadFloat4x4(&mProj);
 
-	XMMATRIX worldViewProj = world * view * proj;
+	//XMMATRIX worldViewProj = world * view * proj;
 
 
-	XMStoreFloat4x4(&constantBufferData.worldViewProjMatrix, XMMatrixTranspose(worldViewProj));
+	//XMStoreFloat4x4(&constantBufferData.worldViewProjMatrix, XMMatrixTranspose(worldViewProj));
 
-	memcpy(pCbvDataBegin, &constantBufferData, sizeof(constantBufferData));
+	//memcpy(pCbvDataBegin, &constantBufferData, sizeof(constantBufferData));
 
 }
 
@@ -571,6 +571,23 @@ void DxApp::CreateConstantBuffer()
 
 	CD3DX12_RANGE readRange(0, 0);        // We do not intend to read from this resource on the CPU.
 	ThrowIfFailed(constantBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pCbvDataBegin)));
+	memcpy(pCbvDataBegin, &constantBufferData, sizeof(constantBufferData));
+
+	// Build the view matrix.
+	XMVECTOR pos = XMVectorSet(-30, 140, 90, 1.0f);
+	XMVECTOR target = XMVectorSet(-30.766044439721629, 139.35721238626465, 90, 1.0f);
+	XMVECTOR up = XMVectorSet(0.0, 0.0f, 1.0f, 0.0f);
+
+	XMMATRIX view = XMMatrixLookAtLH(pos, target, up);
+	XMStoreFloat4x4(&mView, view);
+
+	XMMATRIX world = { 1,0,0,0,0,1,0,0,0,0,1,0,-190,20,50,1 };
+	XMMATRIX P = XMMatrixPerspectiveFovLH(0.25f * Pi, aspectRatio, 1.0f, 1000.0f);
+	XMStoreFloat4x4(&mProj, P);
+	XMMATRIX proj = XMLoadFloat4x4(&mProj);
+
+	XMMATRIX worldViewProj = world * view * proj;
+	XMStoreFloat4x4(&constantBufferData.worldViewProjMatrix, XMMatrixTranspose(worldViewProj));
 	memcpy(pCbvDataBegin, &constantBufferData, sizeof(constantBufferData));
 }
 
