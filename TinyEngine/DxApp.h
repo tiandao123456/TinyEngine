@@ -75,9 +75,9 @@ private:
 	ComPtr<ID3D12Fence> fence;
 	UINT64 fenceValue;
 
-	XMFLOAT4X4 mWorld = { 1.0f,0.0f,0.0f,0.0f,0.0f,1.0f,0.0f,0.0f, 0.0f,0.0f,1.0f,0.0f, 0.0f,0.0f,0.0f,1.0f};
-	XMFLOAT4X4 mView = { 1.0f,0.0f,0.0f,0.0f,0.0f,1.0f,0.0f,0.0f, 0.0f,0.0f,1.0f,0.0f, 0.0f,0.0f,0.0f,1.0f };
-	XMFLOAT4X4 mProj = { 1.0f,0.0f,0.0f,0.0f,0.0f,1.0f,0.0f,0.0f, 0.0f,0.0f,1.0f,0.0f, 0.0f,0.0f,0.0f,1.0f };
+	XMFLOAT4X4 mWorld;
+	XMFLOAT4X4 mView;
+	XMFLOAT4X4 mProj;
 	XMMATRIX worldViewProj;
 	std::vector<Vertex> geometryVertices;
 	std::vector<std::uint16_t> geometryIndices;
@@ -108,7 +108,6 @@ private:
 	void CreateSynObject();
 	void WaitForPreviousFrame();
 	void PopulateCommandList();
-	void CreateWorldViewProj();
 
 	void OnRender();
 	void OnUpdate();

@@ -538,7 +538,7 @@ void DxApp::CreateVertexBuffer()
 	memcpy(pIndexDataBegin, &geometryIndices[0], sizeof(std::uint16_t) * geometryIndices.size());
 	vertexBuffer->Unmap(0, nullptr);
 
-	// Initialize the index buffer view.
+	// Initialize the vertex buffer view.
 	vertexBufferView.BufferLocation = vertexBuffer->GetGPUVirtualAddress();
 	vertexBufferView.StrideInBytes = sizeof(Vertex);
 	vertexBufferView.SizeInBytes = vbByteSize;
@@ -573,7 +573,7 @@ void DxApp::CreateConstantBuffer()
 	ThrowIfFailed(constantBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pCbvDataBegin)));
 	memcpy(pCbvDataBegin, &constantBufferData, sizeof(constantBufferData));
 
-	// Build the view matrix.
+	// Build the mvp matrix.
 	XMVECTOR pos = XMVectorSet(-30, 140, 90, 1.0f);
 	XMVECTOR target = XMVectorSet(-30.766044439721629, 139.35721238626465, 90, 1.0f);
 	XMVECTOR up = XMVectorSet(0.0, 0.0f, 1.0f, 0.0f);
@@ -631,37 +631,24 @@ void DxApp::WaitForPreviousFrame()
 	frameIndex = dxgiSwapChain->GetCurrentBackBufferIndex();
 }
 
-void DxApp::CreateWorldViewProj()
-{
-	//将模型从本地坐标转换到世界坐标系中
-	//包含平移缩放旋转等
-	XMMATRIX worldMatrix = { 1,0,0,0,0,1,0,0,0,0,1,0,-190,20,50,1 };
-
-	//将模型从世界坐标系中转换到相机的坐标系中
-	XMVECTOR pos = XMVectorSet(-30, 140, 90, 1.0f);
-	XMVECTOR target = XMVectorSet(-30.766044439721629, 139.35721238626465, 90, 1.0f);
-	XMVECTOR up = XMVectorSet(0.0, 0.0f, 1.0f, 0.0f);
-
-	XMMATRIX viewMatrix = XMMatrixLookAtLH(pos, target, up);
-
-	//对模型进行透视投影变换
-	XMMATRIX projMatrix = XMMatrixPerspectiveFovLH(0.25f * Pi, aspectRatio, 1.0f, 1000.0f);
-
-	worldViewProj = worldMatrix * viewMatrix * projMatrix;
-}
-
 //初始化dx12
 bool DxApp::InitDirectx12()
 {
 	//枚举适配器
 	EnumAdapter();
+	//创建交换链
 	CreateSwapChain();
+	//创建渲染目标视图和常量缓冲视图
 	CreateRtvAndCbv();
+	//创建根签名
 	CreateRootSignature();
+	//创建渲染管线
 	CreatePipelineState();
+	//创建顶点和索引缓冲
 	CreateVertexBuffer();
+	//创建常量缓冲
 	CreateConstantBuffer();
-	CreateWorldViewProj();
+	//创建同步对象
 	CreateSynObject();
 
 	return true;
