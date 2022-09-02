@@ -85,7 +85,6 @@ private:
 
 
 private:
-	std::wstring GetAssetFullPath(LPCWSTR assetName);
 
 	//使用getApp获取static指针
 	static DxApp* getApp()

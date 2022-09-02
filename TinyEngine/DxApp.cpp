@@ -68,17 +68,17 @@ void DxApp::PopulateCommandList()
 
 	ID3D12DescriptorHeap* ppHeaps[] = { cbvHeap.Get() };
 	commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
-
 	commandList->SetGraphicsRootDescriptorTable(0, cbvHeap->GetGPUDescriptorHandleForHeapStart());
 
 	//绑定视口到渲染管线的光栅化阶段
 	commandList->RSSetViewports(1, &viewport);
 	commandList->RSSetScissorRects(1, &scissorRect);
 
-	// Indicate that the back buffer will be used as a render target.
 	auto x = CD3DX12_RESOURCE_BARRIER::Transition(renderTargets[frameIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	// 通知驱动程序它需要同步对资源的多次访问 
 	commandList->ResourceBarrier(1, &x);
 
+	// 表明后台缓冲将被使用作为渲染目标
 	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(rtvHeap->GetCPUDescriptorHandleForHeapStart(), frameIndex, rtvDescriptorSize);
 	commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
 
@@ -88,12 +88,13 @@ void DxApp::PopulateCommandList()
 	commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
 	commandList->IASetIndexBuffer(&indexBufferView);
+	// 绘制一个实例，第一个参数为索引数量
 	commandList->DrawIndexedInstanced(
 		(UINT)geometryIndices.size(),
 		1, 0, 0, 0);
 
-	// Indicate that the back buffer will now be used to present.
 	auto y = CD3DX12_RESOURCE_BARRIER::Transition(renderTargets[frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+	// 表明后台缓冲现在将被呈现
 	commandList->ResourceBarrier(1, &y);
 
 	ThrowIfFailed(commandList->Close());
@@ -183,14 +184,6 @@ int DxApp::Run()
 	OnDestroy();
 
 	return static_cast<char>(msg.wParam);
-}
-
-std::wstring DxApp::GetAssetFullPath(LPCWSTR assetName)
-{
-	WCHAR assetsPathParameter[512];
-	GetAssetsPath(assetsPathParameter, _countof(assetsPathParameter));
-	assetsPath = assetsPathParameter;
-	return assetsPath + assetName;
 }
 
 void DxApp::EnumAdapter()
