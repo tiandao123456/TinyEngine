@@ -6,11 +6,16 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE prevInstance,
 {
 //执行某函数获取平台
 //UINT GetPlatform()
-	UINT platform /*= GetPlatform()*/;
+	UINT platform = 0/*= GetPlatform()*/;
 
 #if Windows == platform
 	//执行初始化Windows的逻辑
 	//下述同理
+	DxApp instance(hInstance);
+	instance.Init();
+
+	//窗口的主循环
+	instance.Run();
 #endif
 
 #if Mac == platform
@@ -21,10 +26,4 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE prevInstance,
 
 #if Ios == platform
 #endif 
-
-	DxApp instance(hInstance);
-	instance.Init();
-
-	//窗口的主循环
-	instance.Run();
 }

@@ -63,6 +63,7 @@ void DxApp::PopulateCommandList()
 	ThrowIfFailed(commandList->Reset(commandAllocator.Get(), pipelineState.Get()));
 
 	// Set necessary state.
+	// 设置根签名，描述符堆以及描述符表
 	commandList->SetGraphicsRootSignature(rootSignature.Get());
 
 	ID3D12DescriptorHeap* ppHeaps[] = { cbvHeap.Get() };
@@ -70,6 +71,7 @@ void DxApp::PopulateCommandList()
 
 	commandList->SetGraphicsRootDescriptorTable(0, cbvHeap->GetGPUDescriptorHandleForHeapStart());
 
+	//绑定视口到渲染管线的光栅化阶段
 	commandList->RSSetViewports(1, &viewport);
 	commandList->RSSetScissorRects(1, &scissorRect);
 
@@ -194,10 +196,11 @@ std::wstring DxApp::GetAssetFullPath(LPCWSTR assetName)
 void DxApp::EnumAdapter()
 {
 #if defined(DEBUG) || defined(_DEBUG) 
-	// Enable the D3D12 debug layer.
 	{
 		ComPtr<ID3D12Debug> debugController;
+		//获取调试接口
 		ThrowIfFailed(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController)));
+		//开启调试功能
 		debugController->EnableDebugLayer();
 	}
 #endif
@@ -242,7 +245,7 @@ void DxApp::CreateSwapChain()
 	D3D12_COMMAND_QUEUE_DESC queueDesc = {};
 	queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
 	queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-	//由显卡适配器创建命令队列
+	//由显卡适配器创建命令队列，命令队列由GPU维护
 	ThrowIfFailed(d3dDevice->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&commandQueue)));
 
 	// 描述交换链并创建
@@ -257,7 +260,7 @@ void DxApp::CreateSwapChain()
 
 	ComPtr<IDXGISwapChain1> swapChain;
 	ThrowIfFailed(dxgiFactory->CreateSwapChainForHwnd(
-		commandQueue.Get(),        // Swap chain needs the queue so that it can force a flush on it.
+		commandQueue.Get(),        // 交换链需要命令队列才能刷新，比如命令队列中一个指令指示交换链进行前后台缓冲的交换
 		mhMainWnd,
 		&swapChainDesc,
 		nullptr,
@@ -265,7 +268,7 @@ void DxApp::CreateSwapChain()
 		&swapChain
 	));
 
-	// This sample does not support fullscreen transitions.
+	//该窗口将不会响应alt-enter序列（按键组合）
 	ThrowIfFailed(dxgiFactory->MakeWindowAssociation(mhMainWnd, DXGI_MWA_NO_ALT_ENTER));
 
 	ThrowIfFailed(swapChain.As(&dxgiSwapChain));
@@ -286,11 +289,13 @@ void DxApp::CreateRtvAndCbv()
 		rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 		ThrowIfFailed(d3dDevice->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&rtvHeap)));
 
+		//计算RTV描述符的大小
 		rtvDescriptorSize = d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
 		// Describe and create a constant buffer view (CBV) descriptor heap.
 		// Flags indicate that this descriptor heap can be bound to the pipeline 
 		// and that descriptors contained in it can be referenced by a root table.
+		// NumDescripters为1的含义为该常量缓冲视图描述符堆能够绑定到渲染管线上
 		D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc = {};
 		cbvHeapDesc.NumDescriptors = 1;
 		cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
@@ -300,7 +305,15 @@ void DxApp::CreateRtvAndCbv()
 
 	// Create frame resources.
 	{
-		//??
+		//获得渲染目标视图描述符堆的起始位置
+		//		| RTV Descriptor Heap |
+		//		|---------------------|
+		//0		| BackBuffer0's rtv   |
+		//		|---------------------|
+		//1		| BackBuffer1's rtv   |
+		//		|---------------------|
+		//上面创建了渲染目标视图的描述符堆，之后再该堆的基础上再创建渲染目标视图
+		//所以需要先拿到堆的起始地址，之后根据描述符的大小进行偏移创建渲染目标视图
 		CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(rtvHeap->GetCPUDescriptorHandleForHeapStart());
 
 		// Create a RTV for each frame.
@@ -317,6 +330,9 @@ void DxApp::CreateRtvAndCbv()
 void DxApp::CreateRootSignature()
 {
 	//创建根签名，该根签名包含一个描述符表，该描述符表中有一个CBV
+	//描述符表与描述符堆的关系：描述符表实际上是描述符堆的子范围
+	//首先SRV如果想要传进shader中，必须放入到描述符表中（descriptor table）
+	//然后CBV同样也可以放到描述符表中，也可以不放直接传输到shader中
 	D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
 
 	// This is the highest version the sample supports. If CheckFeatureSupport succeeds, the HighestVersion returned will not be greater than this.
@@ -327,14 +343,20 @@ void DxApp::CreateRootSignature()
 		featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
 	}
 
+	//创建根签名的准备工作
+	//描述描述符的范围
 	CD3DX12_DESCRIPTOR_RANGE1 ranges[1];
 	CD3DX12_ROOT_PARAMETER1 rootParameters[1];
 
-	//在此处说明了根签名中有CBV
+	//第一个参数表明描述符的类型
+	//第二个参数表明描述符的数量
+	//第三个参数表明寄存器映射,描述符为CBV 0即该描述符映射到寄存器b0中，从shader中也可以看到对应关系
 	ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+	//描述符表的初始化，该描述符表中只有一个参数
 	rootParameters[0].InitAsDescriptorTable(1, &ranges[0], D3D12_SHADER_VISIBILITY_VERTEX);
 
 	// Allow input layout and deny uneccessary access to certain pipeline stages.
+	// 对渲染管线某些阶段的拒接访问和允许访问
 	D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags =
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
@@ -342,12 +364,15 @@ void DxApp::CreateRootSignature()
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS;
 
+	//根签名描述
 	CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc;
 	rootSignatureDesc.Init_1_1(_countof(rootParameters), rootParameters, 0, nullptr, rootSignatureFlags);
 
 	ComPtr<ID3DBlob> signature;
 	ComPtr<ID3DBlob> error;
+	//根签名的序列化
 	ThrowIfFailed(D3DX12SerializeVersionedRootSignature(&rootSignatureDesc, featureData.HighestVersion, &signature, &error));
+	//创建根签名
 	ThrowIfFailed(d3dDevice->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&rootSignature)));
 }
 
@@ -365,14 +390,15 @@ void DxApp::CreatePipelineState()
 	UINT compileFlags = 0;
 #endif
 
+	//实时编译着色器
 	ThrowIfFailed(D3DCompileFromFile(L"Shaders\\color.hlsl", nullptr, nullptr, "VS", "vs_5_0", compileFlags, 0, &vertexShader, nullptr));
 	ThrowIfFailed(D3DCompileFromFile(L"Shaders\\color.hlsl", nullptr, nullptr, "PS", "ps_5_0", compileFlags, 0, &pixelShader, nullptr));
 
-	// Define the vertex input layout.
+	//定义顶点的输入布局
 	D3D12_INPUT_ELEMENT_DESC inputElementDescs[] =
 	{
+		//顶点位置从0偏移处开始，顶点颜色从第12个字节（x,y,z）开始
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		// 12代表顶点的大小，即x,y,z共计三个字节
 		{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
 	};
 
@@ -383,13 +409,17 @@ void DxApp::CreatePipelineState()
 	psoDesc.VS = CD3DX12_SHADER_BYTECODE(vertexShader.Get());
 	psoDesc.PS = CD3DX12_SHADER_BYTECODE(pixelShader.Get());
 	psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+
+	//描述混和状态
 	psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 	psoDesc.DepthStencilState.DepthEnable = FALSE;
 	psoDesc.DepthStencilState.StencilEnable = FALSE;
 	psoDesc.SampleMask = UINT_MAX;
+	//解释集合或外壳着色器输入图元，此处定义图元为三角形
 	psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 	psoDesc.NumRenderTargets = 1;
 	psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+	//描述资源的多重采样，此处设置为1即不进行多重采样
 	psoDesc.SampleDesc.Count = 1;
 	ThrowIfFailed(d3dDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pipelineState)));
 
@@ -398,6 +428,7 @@ void DxApp::CreatePipelineState()
 
 	// Command lists are created in the recording state, but there is nothing
 	// to record yet. The main loop expects it to be closed, so close it now.
+	// 命令列表创建是用来记录命令的，由于现在没有命令可记录，因此关闭
 	ThrowIfFailed(commandList->Close());
 }
 
@@ -498,7 +529,8 @@ void DxApp::CreateVertexBuffer()
 
 	auto x1 = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
 	auto y1 = CD3DX12_RESOURCE_DESC::Buffer(vbByteSize);
-
+	// 同时创建一个资源和一个隐式堆，使得堆足够大以包含整个资源，同时资源被映射到堆
+	// 此处创建的堆类型为UPLOAD堆，该堆用于将内存中的数据传输到显存
 	ThrowIfFailed(d3dDevice->CreateCommittedResource(
 		&x1,
 		D3D12_HEAP_FLAG_NONE,
@@ -507,7 +539,7 @@ void DxApp::CreateVertexBuffer()
 		nullptr,
 		IID_PPV_ARGS(&vertexBuffer)));
 
-	// 将内存数据拷贝到显存
+	// 将内存中的资源拷贝到以pVertexDataBegin为开始地址的显存中
 	// Copy the triangle data to the vertex buffer.
 	UINT8* pVertexDataBegin;
 	CD3DX12_RANGE readRange1(0, 0);        // We do not intend to read from this resource on the CPU.
@@ -538,11 +570,6 @@ void DxApp::CreateVertexBuffer()
 	memcpy(pIndexDataBegin, &geometryIndices[0], sizeof(std::uint16_t) * geometryIndices.size());
 	vertexBuffer->Unmap(0, nullptr);
 
-	// Initialize the vertex buffer view.
-	vertexBufferView.BufferLocation = vertexBuffer->GetGPUVirtualAddress();
-	vertexBufferView.StrideInBytes = sizeof(Vertex);
-	vertexBufferView.SizeInBytes = vbByteSize;
-
 	indexBufferView.BufferLocation = indexBuffer->GetGPUVirtualAddress();
 	indexBufferView.Format = DXGI_FORMAT_R16_UINT;
 	indexBufferView.SizeInBytes = ibByteSize;
@@ -565,13 +592,15 @@ void DxApp::CreateConstantBuffer()
 
 	// Describe and create a constant buffer view.
 	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
+	//描述const buffer，其位置在GPU上
 	cbvDesc.BufferLocation = constantBuffer->GetGPUVirtualAddress();
 	cbvDesc.SizeInBytes = constantBufferSize;
+	//为什么要获取CPU Handle?
+	//该描述符堆创建在CPU上，之后需要拷贝到GPU上
 	d3dDevice->CreateConstantBufferView(&cbvDesc, cbvHeap->GetCPUDescriptorHandleForHeapStart());
 
 	CD3DX12_RANGE readRange(0, 0);        // We do not intend to read from this resource on the CPU.
 	ThrowIfFailed(constantBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pCbvDataBegin)));
-	memcpy(pCbvDataBegin, &constantBufferData, sizeof(constantBufferData));
 
 	// Build the mvp matrix.
 	XMVECTOR pos = XMVectorSet(-30, 140, 90, 1.0f);
@@ -618,13 +647,17 @@ void DxApp::WaitForPreviousFrame()
 
 	// Signal and increment the fence value.
 	const UINT64 fenceParameter = fenceValue;
+	// 将fence的值更新为1
 	ThrowIfFailed(commandQueue->Signal(fence.Get(), fenceParameter));
 	fenceValue++;
 
 	// Wait until the previous frame is finished.
 	if (fence->GetCompletedValue() < fenceParameter)
 	{
+		//如果围栏到达指定点则触发（即等队列执行完毕）
+		//指定围栏到达某个值的时候应当触发的事件
 		ThrowIfFailed(fence->SetEventOnCompletion(fenceParameter, fenceEvent));
+		//如果等待的对象有信号则立即返回
 		WaitForSingleObject(fenceEvent, INFINITE);
 	}
 
