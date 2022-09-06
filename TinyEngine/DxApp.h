@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DxHelper.h"
+#include <d3d12.h>
 
 #pragma comment(lib,"d3dcompiler.lib")
 #pragma comment(lib, "D3D12.lib")
@@ -27,7 +28,12 @@ private:
 		float padding[48]; // Padding so the constant buffer is 256-byte aligned.
 	};
 	static_assert((sizeof(SceneConstantBuffer) % 256) == 0, "Constant Buffer size must be 256-byte aligned");
-
+	
+	struct ObjectConstant
+	{
+		XMFLOAT4X4 worldViewProjMatrix;
+	};
+	
 	bool useWarpDevice;
 	float aspectRatio;
 	std::wstring assetsPath;
@@ -54,14 +60,23 @@ private:
 	ComPtr<ID3D12Resource> renderTargets[swapChainBufferCount];
 	ComPtr<ID3D12DescriptorHeap> rtvHeap = nullptr;
 	ComPtr<ID3D12DescriptorHeap> cbvHeap = nullptr;
+	ComPtr<ID3D12DescriptorHeap> dsvHeap = nullptr;
+	ComPtr<ID3D12DescriptorHeap> cbvConeHeap = nullptr;
 	UINT rtvDescriptorSize;
 
 	ComPtr<ID3D12RootSignature> rootSignature = nullptr;
 
-	ComPtr<ID3D12Resource> vertexBuffer = nullptr;
-	ComPtr<ID3D12Resource> indexBuffer = nullptr;
-	D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
-	D3D12_INDEX_BUFFER_VIEW indexBufferView;
+	ComPtr<ID3D12Resource> chairVertexBuffer = nullptr;
+	ComPtr<ID3D12Resource> chairIndexBuffer = nullptr;
+	ComPtr<ID3D12Resource> uploadBuffer = nullptr;
+
+	D3D12_VERTEX_BUFFER_VIEW chairVertexBufferView;
+	D3D12_INDEX_BUFFER_VIEW chairIndexBufferView;
+
+	ComPtr<ID3D12Resource> coneVertexBuffer = nullptr;
+	ComPtr<ID3D12Resource> coneIndexBuffer = nullptr;
+	D3D12_VERTEX_BUFFER_VIEW coneVertexBufferView;
+	D3D12_INDEX_BUFFER_VIEW coneIndexBufferView;
 
 	CD3DX12_VIEWPORT viewport;
 	CD3DX12_RECT scissorRect;
@@ -69,6 +84,14 @@ private:
 	ComPtr<ID3D12Resource> constantBuffer;
 	SceneConstantBuffer constantBufferData;
 	UINT8* pCbvDataBegin;
+	std::unique_ptr<UploadHeapConstantBuffer<ObjectConstant>> objectConstantBuffer;
+	CD3DX12_CPU_DESCRIPTOR_HANDLE cbvHeapHandle;
+
+	ComPtr<ID3D12Resource> coneConstantBuffer;
+	SceneConstantBuffer coneConstantBufferData;
+	UINT8* pConeCbvDataBegin;
+
+	ComPtr<ID3D12Resource> depthStencilBuffer;
 
 	UINT frameIndex;
 	HANDLE fenceEvent;
@@ -78,11 +101,18 @@ private:
 	XMFLOAT4X4 mWorld;
 	XMFLOAT4X4 mView;
 	XMFLOAT4X4 mProj;
-	XMMATRIX worldViewProj;
-	std::vector<Vertex> geometryVertices;
-	std::vector<std::uint16_t> geometryIndices;
 
+	XMFLOAT4X4 mConeWorld;
+	XMFLOAT4X4 mConeView;
+	XMFLOAT4X4 mConeProj;
 
+	std::vector<Vertex> chairVertices;
+	std::vector<std::uint16_t> chairIndices;
+
+	std::vector<Vertex> coneVertices;
+	std::vector<std::uint16_t> coneIndices;
+
+	UINT cbvSrvUavDescriptorSize;
 
 private:
 
@@ -99,11 +129,13 @@ private:
 	void EnumAdapter();
 	void CreateCommandObjects();
 	void CreateSwapChain();
-	void CreateRtvAndCbv();
+	void CreateRtvAndCbvAndDsv();
 	void CreateRootSignature();
 	void CreatePipelineState();
 	void CreateVertexBuffer();
 	void CreateConstantBuffer();
+	void CreateDepthStencil();
+	void CreateConstantBufferForCone();
 	void CreateSynObject();
 	void WaitForPreviousFrame();
 	void PopulateCommandList();
@@ -111,6 +143,10 @@ private:
 	void OnRender();
 	void OnUpdate();
 	void OnDestroy();
+
+	void ReadDataFromFile(UINT vertexNums, UINT indexNums, const char* vertexFileName, const char* indexFileName,
+		std::vector<Vertex>& vertices, std::vector<std::uint16_t>& indices, bool isChair);
+	void CreateDefaultHeapBuffer(ID3D12GraphicsCommandList* cmdList, const void* data, const int size, ComPtr<ID3D12Resource>& vertexBuffer);
 
 public:
 	//在构造函数中初始化static指针
@@ -131,6 +167,19 @@ public:
 				   0.0f,1.0f,0.0f,0.0f,
 				   0.0f,0.0f,1.0f,0.0f,
 				   0.0f,0.0f,0.0f,1.0f };
+		mConeWorld = { 1.0f,0.0f,0.0f,0.0f,
+				   0.0f,1.0f,0.0f,0.0f,
+				   0.0f,0.0f,1.0f,0.0f,
+				   0.0f,0.0f,0.0f,1.0f };
+		mConeView = { 1.0f,0.0f,0.0f,0.0f,
+				   0.0f,1.0f,0.0f,0.0f,
+				   0.0f,0.0f,1.0f,0.0f,
+				   0.0f,0.0f,0.0f,1.0f };
+		mConeProj = { 1.0f,0.0f,0.0f,0.0f,
+				   0.0f,1.0f,0.0f,0.0f,
+				   0.0f,0.0f,1.0f,0.0f,
+				   0.0f,0.0f,0.0f,1.0f };
+		aspectRatio = static_cast<float>(mClientWidth) / static_cast<float>(mClientHeight);
 	}
 
 	//给外部调用的接口

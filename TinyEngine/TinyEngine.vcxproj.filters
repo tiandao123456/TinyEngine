@@ -27,6 +27,12 @@
     <ClInclude Include="d3dx12.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="Common\UploadHeapBuffer.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Common\UploadHeapConstantBuffer.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="TinyEngine.cpp">

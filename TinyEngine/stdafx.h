@@ -6,12 +6,19 @@
 #include <dxgi1_6.h>
 #include <D3Dcompiler.h>
 #include <DirectXMath.h>
+
+#include "Common/UploadHeapBuffer.h"
+#include "Common/UploadHeapConstantBuffer.h"
 #include "d3dx12.h"
+#include "DxHelper.h"
+
 
 #include <string>
 #include <wrl.h>
 #include <shellapi.h>
 #include <fstream>
+#include <conio.h>
+#include <memory.h>
 
 #define mClientWidth 800
 #define mClientHeight 600

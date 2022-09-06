@@ -140,6 +140,8 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="Common\UploadHeapBuffer.h" />
+    <ClInclude Include="Common\UploadHeapConstantBuffer.h" />
     <ClInclude Include="d3dx12.h" />
     <ClInclude Include="DxHelper.h" />
     <ClInclude Include="stdafx.h" />

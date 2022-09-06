@@ -342,8 +342,8 @@ struct CD3DX12_RASTERIZER_DESC : public D3D12_RASTERIZER_DESC
     {}
     explicit CD3DX12_RASTERIZER_DESC( CD3DX12_DEFAULT ) noexcept
     {
-        FillMode = D3D12_FILL_MODE_WIREFRAME;
-        //FillMode = D3D12_FILL_MODE_SOLID;
+        //FillMode = D3D12_FILL_MODE_WIREFRAME;
+        FillMode = D3D12_FILL_MODE_SOLID;
         CullMode = D3D12_CULL_MODE_BACK;
         FrontCounterClockwise = FALSE;
         DepthBias = D3D12_DEFAULT_DEPTH_BIAS;
@@ -2238,23 +2238,46 @@ inline UINT64 UpdateSubresources(
     _In_ ID3D12Resource* pDestinationResource,
     _In_ ID3D12Resource* pIntermediate,
     UINT64 IntermediateOffset,
-    _In_range_(0,MaxSubresources) UINT FirstSubresource,
-    _In_range_(1,MaxSubresources-FirstSubresource) UINT NumSubresources,
-    _In_reads_(NumSubresources) const D3D12_SUBRESOURCE_DATA* pSrcData) noexcept
+    _In_range_(0, MaxSubresources) UINT FirstSubresource,
+    _In_range_(1, MaxSubresources - FirstSubresource) UINT NumSubresources,
+    _In_reads_(NumSubresources) D3D12_SUBRESOURCE_DATA* pSrcData)
 {
     UINT64 RequiredSize = 0;
     D3D12_PLACED_SUBRESOURCE_FOOTPRINT Layouts[MaxSubresources];
     UINT NumRows[MaxSubresources];
     UINT64 RowSizesInBytes[MaxSubresources];
 
-    auto Desc = pDestinationResource->GetDesc();
-    ID3D12Device* pDevice = nullptr;
-    pDestinationResource->GetDevice(IID_ID3D12Device, reinterpret_cast<void**>(&pDevice));
+    D3D12_RESOURCE_DESC Desc = pDestinationResource->GetDesc();
+    ID3D12Device* pDevice;
+    pDestinationResource->GetDevice(__uuidof(*pDevice), reinterpret_cast<void**>(&pDevice));
     pDevice->GetCopyableFootprints(&Desc, FirstSubresource, NumSubresources, IntermediateOffset, Layouts, NumRows, RowSizesInBytes, &RequiredSize);
     pDevice->Release();
 
     return UpdateSubresources(pCmdList, pDestinationResource, pIntermediate, FirstSubresource, NumSubresources, RequiredSize, Layouts, NumRows, RowSizesInBytes, pSrcData);
 }
+//template <UINT MaxSubresources>
+//inline UINT64 UpdateSubresources(
+//    _In_ ID3D12GraphicsCommandList* pCmdList,
+//    _In_ ID3D12Resource* pDestinationResource,
+//    _In_ ID3D12Resource* pIntermediate,
+//    UINT64 IntermediateOffset,
+//    _In_range_(0,MaxSubresources) UINT FirstSubresource,
+//    _In_range_(1,MaxSubresources-FirstSubresource) UINT NumSubresources,
+//    _In_reads_(NumSubresources) const D3D12_SUBRESOURCE_DATA* pSrcData)
+//{
+//    UINT64 RequiredSize = 0;
+//    D3D12_PLACED_SUBRESOURCE_FOOTPRINT Layouts[MaxSubresources];
+//    UINT NumRows[MaxSubresources];
+//    UINT64 RowSizesInBytes[MaxSubresources];
+//
+//    auto Desc = pDestinationResource->GetDesc();
+//    ID3D12Device* pDevice = nullptr;
+//    pDestinationResource->GetDevice(__uuidof(pDevice), reinterpret_cast<void**>(&pDevice));
+//    pDevice->GetCopyableFootprints(&Desc, FirstSubresource, NumSubresources, IntermediateOffset, Layouts, NumRows, RowSizesInBytes, &RequiredSize);
+//    pDevice->Release();
+//
+//    return UpdateSubresources(pCmdList, pDestinationResource, pIntermediate, FirstSubresource, NumSubresources, RequiredSize, Layouts, NumRows, RowSizesInBytes, pSrcData);
+//}
 
 //------------------------------------------------------------------------------------------------
 // Stack-allocating UpdateSubresources implementation

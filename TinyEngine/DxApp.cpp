@@ -3,6 +3,51 @@
 
 DxApp* DxApp::app = nullptr;
 
+void DxApp::ReadDataFromFile(UINT vertexNums, UINT indexNums, const char* vertexFileName, const char* indexFileName,
+	std::vector<Vertex>& vertices, std::vector<std::uint16_t>& indices, bool isChair)
+{
+	//从文件中读取顶点数据
+	//std::fstream verticesFile("vertices.txt");
+	std::fstream verticesFile(vertexFileName);
+	if (!verticesFile)
+		exit(-1);
+	for (int i = 0; i < vertexNums; i++)
+	{
+		double x, y, z;
+		char c;
+		verticesFile >> x >> c;
+		verticesFile >> y >> c;
+		verticesFile >> z >> c;
+
+		//windows桌面程序的输出黑窗口
+		//AllocConsole();
+		//_cprintf("i=%f ", x);
+		//_cprintf("i=%f ", y);
+		//_cprintf("i=%f\n", z);
+		if(isChair)
+			vertices.push_back({ XMFLOAT3(x, y, z),XMFLOAT4(1.0f,0.0f,0.0f,0.0f) });
+		else
+			vertices.push_back({ XMFLOAT3(x, y, z),XMFLOAT4(0.0f,1.0f,0.0f,0.0f) });
+	}
+
+	//std::fstream indicesFile("indices.txt");
+	std::fstream indicesFile(indexFileName);
+	if (!indicesFile)
+		exit(-1);
+	for (int i = 0; i < indexNums; i++)
+	{
+		char c;
+		std::uint16_t x, y, z;
+		indicesFile >> x >> c;
+		indicesFile >> y >> c;
+		indicesFile >> z >> c;
+
+		indices.push_back(x);
+		indices.push_back(y);
+		indices.push_back(z);
+	}
+}
+
 void DxApp::OnRender()
 {
 	// Record all the commands we need to render the scene into the command list.
@@ -20,34 +65,32 @@ void DxApp::OnRender()
 
 void DxApp::OnUpdate()
 {
-	//float mTheta = 1.5f * XM_PI;
-	//float mPhi = XM_PIDIV4;
-	//float mRadius = 5.0f;
-	//// Convert Spherical to Cartesian coordinates.
-	//float x = mRadius * sinf(mPhi) * cosf(mTheta);
-	//float z = mRadius * sinf(mPhi) * sinf(mTheta);
-	//float y = mRadius * cosf(mPhi);
+	XMVECTOR pos = XMVectorSet(-30, 140, 90, 1.0f);
+	XMVECTOR target = XMVectorSet(-30.766044439721629, 139.35721238626465, 90, 1.0f);
+	XMVECTOR up = XMVectorSet(0.0, 0.0f, 1.0f, 0.0f);
 
-	//// Build the view matrix.
-	//XMVECTOR pos = XMVectorSet(-30, 140, 90, 1.0f);
-	//XMVECTOR target = XMVectorSet(-30.766044439721629, 139.35721238626465, 90, 1.0f);
-	//XMVECTOR up = XMVectorSet(0.0, 0.0f, 1.0f, 0.0f);
+	XMMATRIX view = XMMatrixLookAtLH(pos, target, up);
+	XMStoreFloat4x4(&mView, view);
 
-	//XMMATRIX view = XMMatrixLookAtLH(pos, target, up);
-	//XMStoreFloat4x4(&mView, view);
+	XMMATRIX world = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -150, 10, 70, 1 };
+	XMMATRIX P = XMMatrixPerspectiveFovLH(0.25f * Pi, aspectRatio, 1.0f, 1000.0f);
+	XMStoreFloat4x4(&mProj, P);
+	XMMATRIX proj = XMLoadFloat4x4(&mProj);
 
-	//XMMATRIX world = { 1,0,0,0,0,1,0,0,0,0,1,0,-190,20,50,1 };
-	//XMMATRIX P = XMMatrixPerspectiveFovLH(0.25f * Pi, aspectRatio, 1.0f, 1000.0f);
-	//XMStoreFloat4x4(&mProj, P);
-	//XMMATRIX proj = XMLoadFloat4x4(&mProj);
+	XMMATRIX worldViewProj = world * view * proj;
 
-	//XMMATRIX worldViewProj = world * view * proj;
+	ObjectConstant objConstants;
+	XMStoreFloat4x4(&objConstants.worldViewProjMatrix, XMMatrixTranspose(worldViewProj));
+	objectConstantBuffer->CopyData(0, objConstants);
 
+	world = { 1,0,0,0,0,1,0,0,0,0,1,0,-190,20,50,1 };
+	P = XMMatrixPerspectiveFovLH(0.25f * Pi, aspectRatio, 1.0f, 1000.0f);
+	XMStoreFloat4x4(&mConeProj, P);
+	proj = XMLoadFloat4x4(&mConeProj);
 
-	//XMStoreFloat4x4(&constantBufferData.worldViewProjMatrix, XMMatrixTranspose(worldViewProj));
-
-	//memcpy(pCbvDataBegin, &constantBufferData, sizeof(constantBufferData));
-
+	worldViewProj = world * view * proj;
+	XMStoreFloat4x4(&objConstants.worldViewProjMatrix, XMMatrixTranspose(worldViewProj));
+	objectConstantBuffer->CopyData(1, objConstants);
 }
 
 void DxApp::PopulateCommandList()
@@ -66,31 +109,49 @@ void DxApp::PopulateCommandList()
 	// 设置根签名，描述符堆以及描述符表
 	commandList->SetGraphicsRootSignature(rootSignature.Get());
 
-	ID3D12DescriptorHeap* ppHeaps[] = { cbvHeap.Get() };
-	commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
-	commandList->SetGraphicsRootDescriptorTable(0, cbvHeap->GetGPUDescriptorHandleForHeapStart());
-
 	//绑定视口到渲染管线的光栅化阶段
 	commandList->RSSetViewports(1, &viewport);
 	commandList->RSSetScissorRects(1, &scissorRect);
 
-	auto x = CD3DX12_RESOURCE_BARRIER::Transition(renderTargets[frameIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
-	// 通知驱动程序它需要同步对资源的多次访问 
-	commandList->ResourceBarrier(1, &x);
-
 	// 表明后台缓冲将被使用作为渲染目标
 	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(rtvHeap->GetCPUDescriptorHandleForHeapStart(), frameIndex, rtvDescriptorSize);
-	commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
+	CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle(dsvHeap->GetCPUDescriptorHandleForHeapStart());
+
+	commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, &dsvHandle);
 
 	// Record commands.
 	const float clearColor[] = { 0.690196097f, 0.768627524f, 0.870588303f, 1.000000000f };
 	commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
+	commandList->ClearDepthStencilView(dsvHeap->GetCPUDescriptorHandleForHeapStart(), D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+
+	auto x = CD3DX12_RESOURCE_BARRIER::Transition(renderTargets[frameIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	// 通知驱动程序它需要同步对资源的多次访问 
+	// 用资源屏障来完成同步，资源屏障即进行资源的状态转换
+	// GPU上某个ALU对该资源可能是只读操作，某个ALU可能是只写操作，使用资源屏障就可以给资源一个状态
+	// 当资源变成只读状态时，表明某些ALU可以进行对资源进行操作了，只写同理
+	commandList->ResourceBarrier(1, &x);
+
+	ID3D12DescriptorHeap* ppHeaps[] = { cbvHeap.Get() };
+	commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
+	CD3DX12_GPU_DESCRIPTOR_HANDLE handle(cbvHeap->GetGPUDescriptorHandleForHeapStart());
+	commandList->SetGraphicsRootDescriptorTable(0, handle);
+
 	commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
-	commandList->IASetIndexBuffer(&indexBufferView);
+	commandList->IASetVertexBuffers(0, 1, &coneVertexBufferView);
+	commandList->IASetIndexBuffer(&coneIndexBufferView);
+	commandList->DrawIndexedInstanced(
+		(UINT)coneIndices.size(),
+		1, 0, 0, 0);
+
+	commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	commandList->IASetVertexBuffers(0, 1, &chairVertexBufferView);
+	commandList->IASetIndexBuffer(&chairIndexBufferView);
+	handle.Offset(cbvSrvUavDescriptorSize);
+	//第一个参数表示绑定的槽位号，都绑定在寄存器b0上，但是有两个const buffer所以需要偏移
+	commandList->SetGraphicsRootDescriptorTable(0, handle);
 	// 绘制一个实例，第一个参数为索引数量
 	commandList->DrawIndexedInstanced(
-		(UINT)geometryIndices.size(),
+		(UINT)chairIndices.size(),
 		1, 0, 0, 0);
 
 	auto y = CD3DX12_RESOURCE_BARRIER::Transition(renderTargets[frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
@@ -268,7 +329,7 @@ void DxApp::CreateSwapChain()
 	frameIndex = dxgiSwapChain->GetCurrentBackBufferIndex();
 }
 
-void DxApp::CreateRtvAndCbv()
+void DxApp::CreateRtvAndCbvAndDsv()
 {
 	// descriptor表示资源在显存中的存放地址（该资源可能是顶点纹理等）
 	// heaps则是存放descriptor的一片内存
@@ -289,10 +350,11 @@ void DxApp::CreateRtvAndCbv()
 		// Flags indicate that this descriptor heap can be bound to the pipeline 
 		// and that descriptors contained in it can be referenced by a root table.
 		// NumDescripters为1的含义为该常量缓冲视图描述符堆能够绑定到渲染管线上
-		D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc = {};
-		cbvHeapDesc.NumDescriptors = 1;
-		cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+		D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc;
+		cbvHeapDesc.NumDescriptors = 2;
 		cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+		cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+		cbvHeapDesc.NodeMask = 0;
 		ThrowIfFailed(d3dDevice->CreateDescriptorHeap(&cbvHeapDesc, IID_PPV_ARGS(&cbvHeap)));
 	}
 
@@ -317,6 +379,14 @@ void DxApp::CreateRtvAndCbv()
 			rtvHandle.Offset(1, rtvDescriptorSize);
 		}
 	}
+
+	//创建深度模板堆
+	D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
+	dsvHeapDesc.NumDescriptors = 1;
+	dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+	dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+	ThrowIfFailed(d3dDevice->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&dsvHeap)));
+
 	ThrowIfFailed(d3dDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&commandAllocator)));
 }
 
@@ -405,8 +475,7 @@ void DxApp::CreatePipelineState()
 
 	//描述混和状态
 	psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-	psoDesc.DepthStencilState.DepthEnable = FALSE;
-	psoDesc.DepthStencilState.StencilEnable = FALSE;
+	psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);//深度模板状态
 	psoDesc.SampleMask = UINT_MAX;
 	//解释集合或外壳着色器输入图元，此处定义图元为三角形
 	psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
@@ -422,195 +491,232 @@ void DxApp::CreatePipelineState()
 	// Command lists are created in the recording state, but there is nothing
 	// to record yet. The main loop expects it to be closed, so close it now.
 	// 命令列表创建是用来记录命令的，由于现在没有命令可记录，因此关闭
-	ThrowIfFailed(commandList->Close());
+	// ThrowIfFailed(commandList->Close());
 }
-
-void DxApp::CreateVertexBuffer()
+void DxApp::CreateDefaultHeapBuffer(ID3D12GraphicsCommandList* cmdList, const void* data, const int size, ComPtr<ID3D12Resource> &vertexBuffer)
 {
-	// Create the vertex buffer.
-	// Define the geometry for a triangle.
+	//将资源从上传堆拷贝到默认堆
+	//下述两种方法都不行，可能是d3dx12文件版本问题
+	//不同版本中函数的实现不同
+	//方法一
+	//ComPtr<ID3D12Resource> defaultBuffer;
 
-	aspectRatio = static_cast<float>(mClientWidth) / static_cast<float>(mClientHeight);
+	//// Create the actual default buffer resource.
 
-	//从文件中读取顶点数据
-	//std::fstream verticesFile("vertices.txt");
-	std::fstream verticesFile("./Datafile/vertices.txt");
-	if (!verticesFile)
-		exit(-1);
-	for (int i = 0; i < 1467; i++)
-	{
-		double x, y, z;
-		char c;
-		verticesFile >> x >> c;
-		verticesFile >> y >> c;
-		verticesFile >> z >> c;
+	//auto defaultHeap = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+	//auto uploadHeap = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+	//auto descSize = CD3DX12_RESOURCE_DESC::Buffer(size);
+	//ThrowIfFailed(d3dDevice->CreateCommittedResource(
+	//	&defaultHeap,
+	//	D3D12_HEAP_FLAG_NONE,
+	//	&descSize,
+	//	D3D12_RESOURCE_STATE_COMMON,
+	//	nullptr,
+	//	IID_PPV_ARGS(defaultBuffer.GetAddressOf())));
 
-		////windows桌面程序的输出黑窗口
-		//AllocConsole();
-		//_cprintf("i=%f ", x);
-		//_cprintf("i=%f ", y);
-		//_cprintf("i=%f\n", z);
-		geometryVertices.push_back({ XMFLOAT3(x, y, z),XMFLOAT4(0.0f,0.0f,0.0f,0.0f) });
-	}
+	//// In order to copy CPU memory data into our default buffer, we need to create
+	//// an intermediate upload heap. 
+	//ThrowIfFailed(d3dDevice->CreateCommittedResource(
+	//	&uploadHeap,
+	//	D3D12_HEAP_FLAG_NONE,
+	//	&descSize,
+	//	D3D12_RESOURCE_STATE_GENERIC_READ,
+	//	nullptr,
+	//	IID_PPV_ARGS(uploadBuffer.GetAddressOf())));
 
-	//std::fstream indicesFile("indices.txt");
-	std::fstream indicesFile("./Datafile/indices.txt");
-	if (!indicesFile)
-		exit(-1);
-	for (int i = 0; i < 1782; i++)
-	{
-		char c;
-		std::uint16_t x, y, z;
-		indicesFile >> x >> c;
-		indicesFile >> y >> c;
-		indicesFile >> z >> c;
 
-		geometryIndices.push_back(x);
-		geometryIndices.push_back(y);
-		geometryIndices.push_back(z);
-	}
+	//// Describe the data we want to copy into the default buffer.
+	//D3D12_SUBRESOURCE_DATA subResourceData = {};
+	//subResourceData.pData = data;
+	//subResourceData.RowPitch = size;
+	//subResourceData.SlicePitch = subResourceData.RowPitch;
 
-	//geometryVertices =
-	//{
-	//	//顶点的坐标与颜色信息RGBA
-	//	Vertex({ XMFLOAT3(-1.0f, -1.0f , -1.0f), XMFLOAT4(1.0f,0.0f,0.0f,1.0f) }),
-	//	Vertex({ XMFLOAT3(-1.0f, +1.0f , -1.0f), XMFLOAT4(1.0f,0.0f,0.0f,1.0f) }),
-	//	Vertex({ XMFLOAT3(+1.0f, +1.0f , -1.0f), XMFLOAT4(1.0f,0.0f,0.0f,1.0f) }),
-	//	Vertex({ XMFLOAT3(+1.0f, -1.0f , -1.0f), XMFLOAT4(1.0f,0.0f,0.0f,1.0f) }),
-	//	Vertex({ XMFLOAT3(-1.0f, -1.0f , +1.0f), XMFLOAT4(1.0f,0.0f,0.0f,1.0f) }),
-	//	Vertex({ XMFLOAT3(-1.0f, +1.0f , +1.0f), XMFLOAT4(1.0f,0.0f,0.0f,1.0f) }),
-	//	Vertex({ XMFLOAT3(+1.0f, +1.0f , +1.0f), XMFLOAT4(1.0f,0.0f,0.0f,1.0f) }),
-	//	Vertex({ XMFLOAT3(+1.0f, -1.0f , +1.0f), XMFLOAT4(1.0f,0.0f,0.0f,1.0f) })
-	//};
+	//// Schedule to copy the data to the default buffer resource.  At a high level, the helper function UpdateSubresources
+	//// will copy the CPU memory into the intermediate upload heap.  Then, using ID3D12CommandList::CopySubresourceRegion,
+	//// the intermediate upload heap data will be copied to mBuffer.
+	//auto barrierFromCommonToDest = CD3DX12_RESOURCE_BARRIER::Transition(defaultBuffer.Get(),D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST);
+	//cmdList->ResourceBarrier(1, &barrierFromCommonToDest);
+	//UpdateSubresources<1>(cmdList, defaultBuffer.Get(), uploadBuffer.Get(), 0, 0, 1, &subResourceData);
 
-	//geometryIndices =
-	//{
-	//	// front face
-	//	0, 1, 2,
-	//	0, 2, 3,
+	//auto barrierFromDestToRead = CD3DX12_RESOURCE_BARRIER::Transition(defaultBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ);
+	//cmdList->ResourceBarrier(1, &barrierFromDestToRead);
 
-	//	// back face
-	//	4, 6, 5,
-	//	4, 7, 6,
+	//// Note: uploadBuffer has to be kept alive after the above function calls because
+	//// the command list has not been executed yet that performs the actual copy.
+	//// The caller can Release the uploadBuffer after it knows the copy has been executed.
+	//vertexBuffer = defaultBuffer;
 
-	//	// left face
-	//	4, 5, 1,
-	//	4, 1, 0,
+	//方法二
+	//D3D12_HEAP_PROPERTIES defaultHeap;
+	//memset(&defaultHeap, 0, sizeof(defaultHeap));
+	//defaultHeap.Type = D3D12_HEAP_TYPE_DEFAULT;
 
-	//	// right face
-	//	3, 2, 6,
-	//	3, 6, 7,
+	//D3D12_HEAP_PROPERTIES  uploadHeap;
+	//memset(&uploadHeap, 0, sizeof(uploadHeap));
+	//uploadHeap.Type = D3D12_HEAP_TYPE_UPLOAD;
 
-	//	// top face
-	//	1, 5, 6,
-	//	1, 6, 2,
+	////创建VertexBuffer的资源描述
+	//D3D12_RESOURCE_DESC defaultBufferDesc;
+	//memset(&defaultBufferDesc, 0, sizeof(D3D12_RESOURCE_DESC));
+	//defaultBufferDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+	//defaultBufferDesc.Alignment = 0;
+	//defaultBufferDesc.Width = size;
+	//defaultBufferDesc.Height = 1;
+	//defaultBufferDesc.DepthOrArraySize = 1;
+	//defaultBufferDesc.MipLevels = 1;
+	//defaultBufferDesc.Format = DXGI_FORMAT_UNKNOWN;
+	//defaultBufferDesc.SampleDesc.Count = 1;
+	//defaultBufferDesc.SampleDesc.Quality = 0;
+	//defaultBufferDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+	//defaultBufferDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+	//// Note: using upload heaps to transfer static data like vert buffers is not 
+	//// recommended. Every time the GPU needs it, the upload heap will be marshalled 
+	//// over. Please read up on Default Heap usage. An upload heap is used here for 
+	//// code simplicity and because there are very few verts to actually transfer.
+	//// 创建m_vertexBuffer，该对象既能够访问内存又能够访问显存
+	//// 使用该对象读取内存中的数据并传输到显存
 
-	//	// bottom face
-	//	4, 0, 3,
-	//	4, 3, 7
-	//};
+	//ThrowIfFailed(d3dDevice->CreateCommittedResource(
+	//	&defaultHeap,
+	//	D3D12_HEAP_FLAG_NONE,
+	//	&defaultBufferDesc,
+	//	D3D12_RESOURCE_STATE_COPY_DEST,
+	//	nullptr,
+	//	IID_PPV_ARGS(&vertexBuffer)));
 
-	const UINT vbByteSize = (UINT)geometryVertices.size() * sizeof(Vertex);
-	const UINT ibByteSize = (UINT)geometryIndices.size() * sizeof(std::uint16_t);
+	//// 同时创建一个资源和一个隐式堆，使得堆足够大以包含整个资源，同时资源被映射到堆
+	//// 此处创建的堆类型为UPLOAD堆，该堆用于将内存中的数据传输到显存
+	//ThrowIfFailed(d3dDevice->CreateCommittedResource(
+	//	&uploadHeap,
+	//	D3D12_HEAP_FLAG_NONE,
+	//	&defaultBufferDesc,
+	//	D3D12_RESOURCE_STATE_GENERIC_READ,
+	//	nullptr,
+	//	IID_PPV_ARGS(&uploadBuffer)));
 
-	// Note: using upload heaps to transfer static data like vert buffers is not 
-	// recommended. Every time the GPU needs it, the upload heap will be marshalled 
-	// over. Please read up on Default Heap usage. An upload heap is used here for 
-	// code simplicity and because there are very few verts to actually transfer.
-	// 创建m_vertexBuffer，该对象既能够访问内存又能够访问显存
-	// 使用该对象读取内存中的数据并传输到显存
+	////获取 IndexBuffer footprint
+	//D3D12_PLACED_SUBRESOURCE_FOOTPRINT bufferFootprint;
+	//UINT64 totalBytes = 0;
+	//d3dDevice->GetCopyableFootprints(&defaultBufferDesc, 0, 1, 0, &bufferFootprint, nullptr, nullptr, &totalBytes);
 
-	auto x1 = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-	auto y1 = CD3DX12_RESOURCE_DESC::Buffer(vbByteSize);
+	////映射内存地址,并把数据拷贝到IndexBufferUploader里
+	//void* ptr_index = nullptr;
+	//uploadBuffer->Map(0, nullptr, &ptr_index);
+	//memcpy(reinterpret_cast<char*>(ptr_index) + bufferFootprint.Offset, data, size);
+	//uploadBuffer->Unmap(0, nullptr);
+
+	////拷贝，把UploaderHeap里的数据拷贝到defaultHeap中
+	//commandList->CopyBufferRegion(vertexBuffer.Get(), 0, uploadBuffer.Get(), 0, totalBytes);
+
+	////为IndexBufferGPU插入资源屏障
+	//D3D12_RESOURCE_BARRIER barrier;
+	//memset(&barrier, 0, sizeof(barrier));
+	//barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+	//barrier.Transition.pResource = vertexBuffer.Get();
+	//barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+	//barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+	//barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_GENERIC_READ;
+	//commandList->ResourceBarrier(1, &barrier);
+
+	D3D12_HEAP_PROPERTIES  uploadHeap;
+	memset(&uploadHeap, 0, sizeof(uploadHeap));
+	auto descSize = CD3DX12_RESOURCE_DESC::Buffer(size);
+	uploadHeap.Type = D3D12_HEAP_TYPE_UPLOAD;
 	// 同时创建一个资源和一个隐式堆，使得堆足够大以包含整个资源，同时资源被映射到堆
 	// 此处创建的堆类型为UPLOAD堆，该堆用于将内存中的数据传输到显存
 	ThrowIfFailed(d3dDevice->CreateCommittedResource(
-		&x1,
-		D3D12_HEAP_FLAG_NONE,
-		&y1,
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(&vertexBuffer)));
+	&uploadHeap,
+	D3D12_HEAP_FLAG_NONE,
+	&descSize,
+	D3D12_RESOURCE_STATE_GENERIC_READ,
+	nullptr,
+	IID_PPV_ARGS(&vertexBuffer)));
 
 	// 将内存中的资源拷贝到以pVertexDataBegin为开始地址的显存中
 	// Copy the triangle data to the vertex buffer.
 	UINT8* pVertexDataBegin;
-	CD3DX12_RANGE readRange1(0, 0);        // We do not intend to read from this resource on the CPU.
-	ThrowIfFailed(vertexBuffer->Map(0, &readRange1, reinterpret_cast<void**>(&pVertexDataBegin)));
-	memcpy(pVertexDataBegin, &geometryVertices[0], sizeof(Vertex)*geometryVertices.size());
+	CD3DX12_RANGE readRange(0, 0);        // We do not intend to read from this resource on the CPU.
+	ThrowIfFailed(vertexBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pVertexDataBegin)));
+	memcpy(pVertexDataBegin, data, size);
 	vertexBuffer->Unmap(0, nullptr);
+}
 
-	// Initialize the vertex buffer view.
-	vertexBufferView.BufferLocation = vertexBuffer->GetGPUVirtualAddress();
-	vertexBufferView.StrideInBytes = sizeof(Vertex);
-	vertexBufferView.SizeInBytes = vbByteSize;
+void DxApp::CreateVertexBuffer()
+{
+	ReadDataFromFile(1467, 1782, "./Datafile/vertices.txt", "./Datafile/indices.txt", chairVertices, chairIndices, true);
+	const UINT chairVerticesSize = (UINT)chairVertices.size() * sizeof(Vertex);
+	CreateDefaultHeapBuffer(commandList.Get(),chairVertices.data(), chairVerticesSize, chairVertexBuffer);
 
-	auto x2 = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-	auto y2 = CD3DX12_RESOURCE_DESC::Buffer(ibByteSize);
+	chairVertexBufferView.BufferLocation = chairVertexBuffer->GetGPUVirtualAddress();
+	chairVertexBufferView.SizeInBytes = chairVerticesSize;
+	chairVertexBufferView.StrideInBytes = sizeof(Vertex);
 
-	ThrowIfFailed(d3dDevice->CreateCommittedResource(
-		&x2,
-		D3D12_HEAP_FLAG_NONE,
-		&y2,
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(&indexBuffer)));
+	ComPtr<ID3D12Resource> chairIndexUploadBuffer;
+	const UINT chairIndicesSize = (UINT)chairIndices.size() * sizeof(std::uint16_t);;
+	CreateDefaultHeapBuffer(commandList.Get(),chairIndices.data(), chairIndicesSize, chairIndexBuffer);
 
-	// 将内存数据拷贝到显存
-	UINT8* pIndexDataBegin;
-	CD3DX12_RANGE readRange2(0, 0);        // We do not intend to read from this resource on the CPU.
-	ThrowIfFailed(indexBuffer->Map(0, &readRange2, reinterpret_cast<void**>(&pIndexDataBegin)));
-	memcpy(pIndexDataBegin, &geometryIndices[0], sizeof(std::uint16_t) * geometryIndices.size());
-	vertexBuffer->Unmap(0, nullptr);
+	chairIndexBufferView.BufferLocation = chairIndexBuffer->GetGPUVirtualAddress();
+	chairIndexBufferView.SizeInBytes = chairIndicesSize;
+	chairIndexBufferView.Format = DXGI_FORMAT_R16_UINT;
 
-	indexBufferView.BufferLocation = indexBuffer->GetGPUVirtualAddress();
-	indexBufferView.Format = DXGI_FORMAT_R16_UINT;
-	indexBufferView.SizeInBytes = ibByteSize;
+	ReadDataFromFile(198, 284, "./Datafile/vertices1.txt", "./Datafile/indices1.txt", coneVertices, coneIndices, false);
+	ComPtr<ID3D12Resource> coneVertexUploadBuffer;
+	const UINT coneVerticesSize = (UINT)coneVertices.size() * sizeof(Vertex);
+	CreateDefaultHeapBuffer(commandList.Get(), coneVertices.data(), coneVerticesSize, coneVertexBuffer);
+
+	coneVertexBufferView.BufferLocation = coneVertexBuffer->GetGPUVirtualAddress();
+	coneVertexBufferView.SizeInBytes = coneVerticesSize;
+	coneVertexBufferView.StrideInBytes = sizeof(Vertex);
+
+	ComPtr<ID3D12Resource> coneIndexUploadBuffer;
+	const UINT coneIndicesSize = (UINT)coneIndices.size() * sizeof(std::uint16_t);;
+	CreateDefaultHeapBuffer(commandList.Get(), coneIndices.data(), coneIndicesSize, coneIndexBuffer);
+
+	coneIndexBufferView.BufferLocation = coneIndexBuffer->GetGPUVirtualAddress();
+	coneIndexBufferView.SizeInBytes = coneIndicesSize;
+	coneIndexBufferView.Format = DXGI_FORMAT_R16_UINT;
+
+	ThrowIfFailed(commandList->Close());
 }
 
 void DxApp::CreateConstantBuffer()
 {
-	const UINT constantBufferSize = sizeof(SceneConstantBuffer);    // CB size is required to be 256-byte aligned.
+	objectConstantBuffer = std::make_unique<UploadHeapConstantBuffer<ObjectConstant>>(d3dDevice.Get(), 2);
+	cbvSrvUavDescriptorSize = d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	cbvHeapHandle = cbvHeap->GetCPUDescriptorHandleForHeapStart();
+	objectConstantBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvHeapHandle, 0);
+	cbvHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
+	objectConstantBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvHeapHandle, 1);
+}
 
-	auto x = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-	auto y = CD3DX12_RESOURCE_DESC::Buffer(constantBufferSize);
+void DxApp::CreateDepthStencil()
+{
+	D3D12_DEPTH_STENCIL_VIEW_DESC depthStencilDesc = {};
+	depthStencilDesc.Format = DXGI_FORMAT_D32_FLOAT;
+	depthStencilDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+	depthStencilDesc.Flags = D3D12_DSV_FLAG_NONE;
+
+	D3D12_CLEAR_VALUE depthOptimizedClearValue = {};
+	depthOptimizedClearValue.Format = DXGI_FORMAT_D32_FLOAT;
+	depthOptimizedClearValue.DepthStencil.Depth = 1.0f;
+	depthOptimizedClearValue.DepthStencil.Stencil = 0;
+
+	CD3DX12_HEAP_PROPERTIES heapProperties2 = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+	CD3DX12_RESOURCE_DESC tex2D = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_D32_FLOAT, mClientWidth, mClientHeight, 1, 0, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL);
 
 	ThrowIfFailed(d3dDevice->CreateCommittedResource(
-		&x,
+		&heapProperties2,
 		D3D12_HEAP_FLAG_NONE,
-		&y,
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(&constantBuffer)));
+		&tex2D,
+		D3D12_RESOURCE_STATE_DEPTH_WRITE,
+		&depthOptimizedClearValue,
+		IID_PPV_ARGS(&depthStencilBuffer)));
 
-	// Describe and create a constant buffer view.
-	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
-	//描述const buffer，其位置在GPU上
-	cbvDesc.BufferLocation = constantBuffer->GetGPUVirtualAddress();
-	cbvDesc.SizeInBytes = constantBufferSize;
-	//为什么要获取CPU Handle?
-	//该描述符堆创建在CPU上，之后需要拷贝到GPU上
-	d3dDevice->CreateConstantBufferView(&cbvDesc, cbvHeap->GetCPUDescriptorHandleForHeapStart());
+	d3dDevice->CreateDepthStencilView(depthStencilBuffer.Get(), &depthStencilDesc, dsvHeap->GetCPUDescriptorHandleForHeapStart());
+}
 
-	CD3DX12_RANGE readRange(0, 0);        // We do not intend to read from this resource on the CPU.
-	ThrowIfFailed(constantBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pCbvDataBegin)));
-
-	// Build the mvp matrix.
-	XMVECTOR pos = XMVectorSet(-30, 140, 90, 1.0f);
-	XMVECTOR target = XMVectorSet(-30.766044439721629, 139.35721238626465, 90, 1.0f);
-	XMVECTOR up = XMVectorSet(0.0, 0.0f, 1.0f, 0.0f);
-
-	XMMATRIX view = XMMatrixLookAtLH(pos, target, up);
-	XMStoreFloat4x4(&mView, view);
-
-	XMMATRIX world = { 1,0,0,0,0,1,0,0,0,0,1,0,-190,20,50,1 };
-	XMMATRIX P = XMMatrixPerspectiveFovLH(0.25f * Pi, aspectRatio, 1.0f, 1000.0f);
-	XMStoreFloat4x4(&mProj, P);
-	XMMATRIX proj = XMLoadFloat4x4(&mProj);
-
-	XMMATRIX worldViewProj = world * view * proj;
-	XMStoreFloat4x4(&constantBufferData.worldViewProjMatrix, XMMatrixTranspose(worldViewProj));
-	memcpy(pCbvDataBegin, &constantBufferData, sizeof(constantBufferData));
+void DxApp::CreateConstantBufferForCone()
+{
 }
 
 void DxApp::CreateSynObject()
@@ -665,7 +771,7 @@ bool DxApp::InitDirectx12()
 	//创建交换链
 	CreateSwapChain();
 	//创建渲染目标视图和常量缓冲视图
-	CreateRtvAndCbv();
+	CreateRtvAndCbvAndDsv();
 	//创建根签名
 	CreateRootSignature();
 	//创建渲染管线
@@ -674,6 +780,7 @@ bool DxApp::InitDirectx12()
 	CreateVertexBuffer();
 	//创建常量缓冲
 	CreateConstantBuffer();
+	CreateDepthStencil();
 	//创建同步对象
 	CreateSynObject();
 
