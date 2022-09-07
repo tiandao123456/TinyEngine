@@ -492,6 +492,7 @@ void DxApp::CreatePipelineState()
 	// to record yet. The main loop expects it to be closed, so close it now.
 	// 命令列表创建是用来记录命令的，由于现在没有命令可记录，因此关闭
 	// ThrowIfFailed(commandList->Close());
+	//由于后面有命令所以不能close
 }
 void DxApp::CreateDefaultHeapBuffer(ID3D12GraphicsCommandList* cmdList, const void* data, const int size, ComPtr<ID3D12Resource> &vertexBuffer)
 {
@@ -499,54 +500,54 @@ void DxApp::CreateDefaultHeapBuffer(ID3D12GraphicsCommandList* cmdList, const vo
 	//下述两种方法都不行，可能是d3dx12文件版本问题
 	//不同版本中函数的实现不同
 	//方法一
-	//ComPtr<ID3D12Resource> defaultBuffer;
+	ComPtr<ID3D12Resource> defaultBuffer;
 
-	//// Create the actual default buffer resource.
+	// Create the actual default buffer resource.
 
-	//auto defaultHeap = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-	//auto uploadHeap = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-	//auto descSize = CD3DX12_RESOURCE_DESC::Buffer(size);
-	//ThrowIfFailed(d3dDevice->CreateCommittedResource(
-	//	&defaultHeap,
-	//	D3D12_HEAP_FLAG_NONE,
-	//	&descSize,
-	//	D3D12_RESOURCE_STATE_COMMON,
-	//	nullptr,
-	//	IID_PPV_ARGS(defaultBuffer.GetAddressOf())));
+	auto defaultHeap = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+	auto uploadHeap = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+	auto descSize = CD3DX12_RESOURCE_DESC::Buffer(size);
+	ThrowIfFailed(d3dDevice->CreateCommittedResource(
+		&defaultHeap,
+		D3D12_HEAP_FLAG_NONE,
+		&descSize,
+		D3D12_RESOURCE_STATE_COMMON,
+		nullptr,
+		IID_PPV_ARGS(defaultBuffer.GetAddressOf())));
 
-	//// In order to copy CPU memory data into our default buffer, we need to create
-	//// an intermediate upload heap. 
-	//ThrowIfFailed(d3dDevice->CreateCommittedResource(
-	//	&uploadHeap,
-	//	D3D12_HEAP_FLAG_NONE,
-	//	&descSize,
-	//	D3D12_RESOURCE_STATE_GENERIC_READ,
-	//	nullptr,
-	//	IID_PPV_ARGS(uploadBuffer.GetAddressOf())));
+	// In order to copy CPU memory data into our default buffer, we need to create
+	// an intermediate upload heap. 
+	ThrowIfFailed(d3dDevice->CreateCommittedResource(
+		&uploadHeap,
+		D3D12_HEAP_FLAG_NONE,
+		&descSize,
+		D3D12_RESOURCE_STATE_GENERIC_READ,
+		nullptr,
+		IID_PPV_ARGS(uploadBuffer.GetAddressOf())));
 
 
-	//// Describe the data we want to copy into the default buffer.
-	//D3D12_SUBRESOURCE_DATA subResourceData = {};
-	//subResourceData.pData = data;
-	//subResourceData.RowPitch = size;
-	//subResourceData.SlicePitch = subResourceData.RowPitch;
+	// Describe the data we want to copy into the default buffer.
+	D3D12_SUBRESOURCE_DATA subResourceData = {};
+	subResourceData.pData = data;
+	subResourceData.RowPitch = size;
+	subResourceData.SlicePitch = subResourceData.RowPitch;
 
-	//// Schedule to copy the data to the default buffer resource.  At a high level, the helper function UpdateSubresources
-	//// will copy the CPU memory into the intermediate upload heap.  Then, using ID3D12CommandList::CopySubresourceRegion,
-	//// the intermediate upload heap data will be copied to mBuffer.
-	//auto barrierFromCommonToDest = CD3DX12_RESOURCE_BARRIER::Transition(defaultBuffer.Get(),D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST);
-	//cmdList->ResourceBarrier(1, &barrierFromCommonToDest);
-	//UpdateSubresources<1>(cmdList, defaultBuffer.Get(), uploadBuffer.Get(), 0, 0, 1, &subResourceData);
+	// Schedule to copy the data to the default buffer resource.  At a high level, the helper function UpdateSubresources
+	// will copy the CPU memory into the intermediate upload heap.  Then, using ID3D12CommandList::CopySubresourceRegion,
+	// the intermediate upload heap data will be copied to mBuffer.
+	auto barrierFromCommonToDest = CD3DX12_RESOURCE_BARRIER::Transition(defaultBuffer.Get(),D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST);
+	cmdList->ResourceBarrier(1, &barrierFromCommonToDest);
+	UpdateSubresources<1>(cmdList, defaultBuffer.Get(), uploadBuffer.Get(), 0, 0, 1, &subResourceData);
 
-	//auto barrierFromDestToRead = CD3DX12_RESOURCE_BARRIER::Transition(defaultBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ);
-	//cmdList->ResourceBarrier(1, &barrierFromDestToRead);
+	auto barrierFromDestToRead = CD3DX12_RESOURCE_BARRIER::Transition(defaultBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ);
+	cmdList->ResourceBarrier(1, &barrierFromDestToRead);
 
-	//// Note: uploadBuffer has to be kept alive after the above function calls because
-	//// the command list has not been executed yet that performs the actual copy.
-	//// The caller can Release the uploadBuffer after it knows the copy has been executed.
-	//vertexBuffer = defaultBuffer;
+	// Note: uploadBuffer has to be kept alive after the above function calls because
+	// the command list has not been executed yet that performs the actual copy.
+	// The caller can Release the uploadBuffer after it knows the copy has been executed.
+	vertexBuffer = defaultBuffer;
 
-	//方法二
+	////方法二
 	//D3D12_HEAP_PROPERTIES defaultHeap;
 	//memset(&defaultHeap, 0, sizeof(defaultHeap));
 	//defaultHeap.Type = D3D12_HEAP_TYPE_DEFAULT;
@@ -618,27 +619,28 @@ void DxApp::CreateDefaultHeapBuffer(ID3D12GraphicsCommandList* cmdList, const vo
 	//barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_GENERIC_READ;
 	//commandList->ResourceBarrier(1, &barrier);
 
-	D3D12_HEAP_PROPERTIES  uploadHeap;
-	memset(&uploadHeap, 0, sizeof(uploadHeap));
-	auto descSize = CD3DX12_RESOURCE_DESC::Buffer(size);
-	uploadHeap.Type = D3D12_HEAP_TYPE_UPLOAD;
-	// 同时创建一个资源和一个隐式堆，使得堆足够大以包含整个资源，同时资源被映射到堆
-	// 此处创建的堆类型为UPLOAD堆，该堆用于将内存中的数据传输到显存
-	ThrowIfFailed(d3dDevice->CreateCommittedResource(
-	&uploadHeap,
-	D3D12_HEAP_FLAG_NONE,
-	&descSize,
-	D3D12_RESOURCE_STATE_GENERIC_READ,
-	nullptr,
-	IID_PPV_ARGS(&vertexBuffer)));
+	//方法三
+	//D3D12_HEAP_PROPERTIES  uploadHeap;
+	//memset(&uploadHeap, 0, sizeof(uploadHeap));
+	//auto descSize = CD3DX12_RESOURCE_DESC::Buffer(size);
+	//uploadHeap.Type = D3D12_HEAP_TYPE_UPLOAD;
+	//// 同时创建一个资源和一个隐式堆，使得堆足够大以包含整个资源，同时资源被映射到堆
+	//// 此处创建的堆类型为UPLOAD堆，该堆用于将内存中的数据传输到显存
+	//ThrowIfFailed(d3dDevice->CreateCommittedResource(
+	//&uploadHeap,
+	//D3D12_HEAP_FLAG_NONE,
+	//&descSize,
+	//D3D12_RESOURCE_STATE_GENERIC_READ,
+	//nullptr,
+	//IID_PPV_ARGS(&vertexBuffer)));
 
-	// 将内存中的资源拷贝到以pVertexDataBegin为开始地址的显存中
-	// Copy the triangle data to the vertex buffer.
-	UINT8* pVertexDataBegin;
-	CD3DX12_RANGE readRange(0, 0);        // We do not intend to read from this resource on the CPU.
-	ThrowIfFailed(vertexBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pVertexDataBegin)));
-	memcpy(pVertexDataBegin, data, size);
-	vertexBuffer->Unmap(0, nullptr);
+	//// 将内存中的资源拷贝到以pVertexDataBegin为开始地址的显存中
+	//// Copy the triangle data to the vertex buffer.
+	//UINT8* pVertexDataBegin;
+	//CD3DX12_RANGE readRange(0, 0);        // We do not intend to read from this resource on the CPU.
+	//ThrowIfFailed(vertexBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pVertexDataBegin)));
+	//memcpy(pVertexDataBegin, data, size);
+	//vertexBuffer->Unmap(0, nullptr);
 }
 
 void DxApp::CreateVertexBuffer()
@@ -676,7 +678,10 @@ void DxApp::CreateVertexBuffer()
 	coneIndexBufferView.SizeInBytes = coneIndicesSize;
 	coneIndexBufferView.Format = DXGI_FORMAT_R16_UINT;
 
+	//commandList记录了命令但是在提交到commandQueue之前就被reset了，所以需要强制提交一次并等待执行完毕
 	ThrowIfFailed(commandList->Close());
+	ID3D12CommandList* cmdsLists[] = { commandList.Get() };
+	commandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
 }
 
 void DxApp::CreateConstantBuffer()
