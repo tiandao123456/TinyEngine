@@ -33,6 +33,9 @@
     <ClInclude Include="Common\UploadHeapConstantBuffer.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="JsonfileParse.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="TinyEngine.cpp">
@@ -42,6 +45,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="DxApp.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="JsonfileParse.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
