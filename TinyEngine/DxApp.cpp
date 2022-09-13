@@ -2,51 +2,7 @@
 #include "DxApp.h"
 
 DxApp* DxApp::app = nullptr;
-
-void DxApp::ReadDataFromFile(UINT vertexNums, UINT indexNums, const char* vertexFileName, const char* indexFileName,
-	std::vector<Vertex>& vertices, std::vector<std::uint16_t>& indices, bool isChair)
-{
-	//从文件中读取顶点数据
-	//std::fstream verticesFile("vertices.txt");
-	std::fstream verticesFile(vertexFileName);
-	if (!verticesFile)
-		exit(-1);
-	for (int i = 0; i < vertexNums; i++)
-	{
-		double x, y, z;
-		char c;
-		verticesFile >> x >> c;
-		verticesFile >> y >> c;
-		verticesFile >> z >> c;
-
-		//windows桌面程序的输出黑窗口
-		//AllocConsole();
-		//_cprintf("i=%f ", x);
-		//_cprintf("i=%f ", y);
-		//_cprintf("i=%f\n", z);
-		if(isChair)
-			vertices.push_back({ XMFLOAT3(x, y, z),XMFLOAT4(1.0f,0.0f,0.0f,0.0f) });
-		else
-			vertices.push_back({ XMFLOAT3(x, y, z),XMFLOAT4(0.0f,1.0f,0.0f,0.0f) });
-	}
-
-	//std::fstream indicesFile("indices.txt");
-	std::fstream indicesFile(indexFileName);
-	if (!indicesFile)
-		exit(-1);
-	for (int i = 0; i < indexNums; i++)
-	{
-		char c;
-		std::uint16_t x, y, z;
-		indicesFile >> x >> c;
-		indicesFile >> y >> c;
-		indicesFile >> z >> c;
-
-		indices.push_back(x);
-		indices.push_back(y);
-		indices.push_back(z);
-	}
-}
+HWND DxApp::mhMainWnd = nullptr;
 
 void DxApp::OnRender()
 {
@@ -63,34 +19,36 @@ void DxApp::OnRender()
 	WaitForPreviousFrame();
 }
 
+//更新worldViewProj矩阵
 void DxApp::OnUpdate()
 {
-	XMVECTOR pos = XMVectorSet(-30, 140, 90, 1.0f);
-	XMVECTOR target = XMVectorSet(-30.766044439721629, 139.35721238626465, 90, 1.0f);
+	XMVECTOR pos = XMVectorSet(cameraData.location[0], cameraData.location[1], cameraData.location[2], 1.0f);
+	XMVECTOR target = XMVectorSet(cameraData.target[0], cameraData.target[1], cameraData.target[2], 1.0f);
 	XMVECTOR up = XMVectorSet(0.0, 0.0f, 1.0f, 0.0f);
 
 	XMMATRIX view = XMMatrixLookAtLH(pos, target, up);
 	XMStoreFloat4x4(&mView, view);
 
-	XMMATRIX world = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -150, 10, 70, 1 };
-	XMMATRIX P = XMMatrixPerspectiveFovLH(0.25f * Pi, aspectRatio, 1.0f, 1000.0f);
-	XMStoreFloat4x4(&mProj, P);
-	XMMATRIX proj = XMLoadFloat4x4(&mProj);
+	int position = 0;
+	for(auto i=0;i<modelMatrixDatas.size();i++)
+	{
+		XMMATRIX world =
+		{
+			modelMatrixDatas[i][0],modelMatrixDatas[i][1],modelMatrixDatas[i][2],modelMatrixDatas[i][3],
+			modelMatrixDatas[i][4],modelMatrixDatas[i][5],modelMatrixDatas[i][6],modelMatrixDatas[i][7],
+			modelMatrixDatas[i][8],modelMatrixDatas[i][9],modelMatrixDatas[i][10],modelMatrixDatas[i][11],
+			modelMatrixDatas[i][12],modelMatrixDatas[i][13],modelMatrixDatas[i][14],modelMatrixDatas[i][15]
+		};
+		XMMATRIX p = XMMatrixPerspectiveFovLH(0.25f * Pi, aspectRatio, 1.0f, 1000.0f);
+		XMStoreFloat4x4(&mProj, p);
+		XMMATRIX proj = XMLoadFloat4x4(&mProj);
 
-	XMMATRIX worldViewProj = world * view * proj;
+		XMMATRIX worldViewProj = world * view * proj;
 
-	ObjectConstant objConstants;
-	XMStoreFloat4x4(&objConstants.worldViewProjMatrix, XMMatrixTranspose(worldViewProj));
-	objectConstantBuffer->CopyData(0, objConstants);
-
-	world = { 1,0,0,0,0,1,0,0,0,0,1,0,-190,20,50,1 };
-	P = XMMatrixPerspectiveFovLH(0.25f * Pi, aspectRatio, 1.0f, 1000.0f);
-	XMStoreFloat4x4(&mConeProj, P);
-	proj = XMLoadFloat4x4(&mConeProj);
-
-	worldViewProj = world * view * proj;
-	XMStoreFloat4x4(&objConstants.worldViewProjMatrix, XMMatrixTranspose(worldViewProj));
-	objectConstantBuffer->CopyData(1, objConstants);
+		ObjectConstant objConstants;
+		XMStoreFloat4x4(&objConstants.worldViewProjMatrix, XMMatrixTranspose(worldViewProj));
+		objectConstantBuffer->CopyData(position++, objConstants);
+	}
 }
 
 void DxApp::PopulateCommandList()
@@ -105,7 +63,6 @@ void DxApp::PopulateCommandList()
 	// re-recording.
 	ThrowIfFailed(commandList->Reset(commandAllocator.Get(), pipelineState.Get()));
 
-	// Set necessary state.
 	// 设置根签名，描述符堆以及描述符表
 	commandList->SetGraphicsRootSignature(rootSignature.Get());
 
@@ -137,23 +94,20 @@ void DxApp::PopulateCommandList()
 	commandList->SetGraphicsRootDescriptorTable(0, handle);
 
 	commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	commandList->IASetVertexBuffers(0, 1, &coneVertexBufferView);
-	commandList->IASetIndexBuffer(&coneIndexBufferView);
-	commandList->DrawIndexedInstanced(
-		(UINT)coneIndices.size(),
-		1, 0, 0, 0);
+	commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
+	commandList->IASetIndexBuffer(&indexBufferView);
 
-	commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	commandList->IASetVertexBuffers(0, 1, &chairVertexBufferView);
-	commandList->IASetIndexBuffer(&chairIndexBufferView);
-	handle.Offset(cbvSrvUavDescriptorSize);
-	//第一个参数表示绑定的槽位号，都绑定在寄存器b0上，但是有两个const buffer所以需要偏移
-	commandList->SetGraphicsRootDescriptorTable(0, handle);
-	// 绘制一个实例，第一个参数为索引数量
-	commandList->DrawIndexedInstanced(
-		(UINT)chairIndices.size(),
-		1, 0, 0, 0);
-
+	for (auto i = 0; i < staticMeshDatas.size(); i++)
+	{
+		handle.Offset(cbvSrvUavDescriptorSize * i);
+		// 第一个参数表示绑定的槽位号，都绑定在寄存器b0上，但是有两个const buffer所以需要偏移
+		commandList->SetGraphicsRootDescriptorTable(0, handle);
+		if (i==0)
+			// 绘制一个实例，第一个参数为索引数量
+			commandList->DrawIndexedInstanced((UINT)staticMeshIndicesNums[0], 1, 0, 0, 0);
+		else
+			commandList->DrawIndexedInstanced((UINT)staticMeshIndicesNums[i], 1, (UINT)staticMeshIndicesNums[i-1], staticMeshDatas[i-1].vertices.size(), 0);
+	}
 	auto y = CD3DX12_RESOURCE_BARRIER::Transition(renderTargets[frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
 	// 表明后台缓冲现在将被呈现
 	commandList->ResourceBarrier(1, &y);
@@ -164,12 +118,16 @@ void DxApp::PopulateCommandList()
 //回调函数,有鼠标或键盘消息就触发
 LRESULT CALLBACK DxApp::MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+
 	switch (msg)
 	{
 	case WM_PAINT:
-		//获取实例指针
-		DxApp::getApp()->OnUpdate();
-		DxApp::getApp()->OnRender();
+		//DxApp::getApp()->OnUpdate();
+		//DxApp::getApp()->OnRender();
+		//绘制将不在此处处理
+		PAINTSTRUCT ps;
+		BeginPaint(DxApp::mhMainWnd, &ps);
+		EndPaint(DxApp::mhMainWnd, &ps);
 		return 0;
 	case WM_DESTROY:
 		PostQuitMessage(0);
@@ -214,6 +172,7 @@ bool DxApp::InitMainWindow()
 	}
 
 	ShowWindow(mhMainWnd, SW_SHOW);
+	UpdateWindow(mhMainWnd);
 
 	return true;
 }
@@ -227,24 +186,19 @@ void DxApp::OnDestroy()
 	CloseHandle(fenceEvent);
 }
 
-int DxApp::Run()
+bool DxApp::messageLoop()
 {
-
-	MSG msg = {};
-
-	while (msg.message != WM_QUIT)
+	bool quit = false;
+	MSG Msg = {};
+	while (PeekMessage(&Msg, NULL, 0, 0, PM_REMOVE))
 	{
-		// Process any messages in the queue.
-		if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
-		{
-			TranslateMessage(&msg);
-			DispatchMessage(&msg);
-		}
+		TranslateMessage(&Msg);
+		DispatchMessage(&Msg);
+
+		if (Msg.message == WM_QUIT)
+			quit = true;
 	}
-
-	OnDestroy();
-
-	return static_cast<char>(msg.wParam);
+	return !quit;
 }
 
 void DxApp::EnumAdapter()
@@ -351,7 +305,7 @@ void DxApp::CreateRtvAndCbvAndDsv()
 		// and that descriptors contained in it can be referenced by a root table.
 		// NumDescripters为1的含义为该常量缓冲视图描述符堆能够绑定到渲染管线上
 		D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc;
-		cbvHeapDesc.NumDescriptors = 2;
+		cbvHeapDesc.NumDescriptors = staticMeshDatas.size();
 		cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 		cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 		cbvHeapDesc.NodeMask = 0;
@@ -645,38 +599,37 @@ void DxApp::CreateDefaultHeapBuffer(ID3D12GraphicsCommandList* cmdList, const vo
 
 void DxApp::CreateVertexBuffer()
 {
-	ReadDataFromFile(1467, 1782, "./Datafile/vertices.txt", "./Datafile/indices.txt", chairVertices, chairIndices, true);
-	const UINT chairVerticesSize = (UINT)chairVertices.size() * sizeof(Vertex);
-	CreateDefaultHeapBuffer(commandList.Get(),chairVertices.data(), chairVerticesSize, chairVertexBuffer);
+	for (auto i = 0; i < staticMeshDatas.size(); i++)
+	{
+		modelMatrixDatas.push_back(staticMeshDatas[i].modelMatrix);
+		staticMeshIndicesNums.push_back(staticMeshDatas[i].indiceNum);
 
-	chairVertexBufferView.BufferLocation = chairVertexBuffer->GetGPUVirtualAddress();
-	chairVertexBufferView.SizeInBytes = chairVerticesSize;
-	chairVertexBufferView.StrideInBytes = sizeof(Vertex);
+		auto subVertices = staticMeshDatas[i].vertices;
+		for(auto j=0;j< subVertices.size();j++)
+		{ 
+			allVertices.push_back(Vertex{ subVertices[j].position,subVertices[j].color });
+		}
+		auto subIndices = staticMeshDatas[i].indices;
+		for (auto j = 0; j < subIndices.size(); j++)
+		{
+			allIndices.push_back(subIndices[j]);
+		}
+	}
 
-	ComPtr<ID3D12Resource> chairIndexUploadBuffer;
-	const UINT chairIndicesSize = (UINT)chairIndices.size() * sizeof(std::uint16_t);;
-	CreateDefaultHeapBuffer(commandList.Get(),chairIndices.data(), chairIndicesSize, chairIndexBuffer);
+	const UINT verticesSize = (UINT)allVertices.size() * sizeof(Vertex);
+	CreateDefaultHeapBuffer(commandList.Get(), allVertices.data(), verticesSize, vertexBuffer);
 
-	chairIndexBufferView.BufferLocation = chairIndexBuffer->GetGPUVirtualAddress();
-	chairIndexBufferView.SizeInBytes = chairIndicesSize;
-	chairIndexBufferView.Format = DXGI_FORMAT_R16_UINT;
+	vertexBufferView.BufferLocation = vertexBuffer->GetGPUVirtualAddress();
+	vertexBufferView.StrideInBytes = sizeof(Vertex);
+	vertexBufferView.SizeInBytes = verticesSize;
 
-	ReadDataFromFile(198, 284, "./Datafile/vertices1.txt", "./Datafile/indices1.txt", coneVertices, coneIndices, false);
-	ComPtr<ID3D12Resource> coneVertexUploadBuffer;
-	const UINT coneVerticesSize = (UINT)coneVertices.size() * sizeof(Vertex);
-	CreateDefaultHeapBuffer(commandList.Get(), coneVertices.data(), coneVerticesSize, coneVertexBuffer);
+	const UINT indicesSize = (UINT)allIndices.size() * sizeof(std::uint16_t);
+	CreateDefaultHeapBuffer(commandList.Get(), allIndices.data(), indicesSize, indexBuffer);
 
-	coneVertexBufferView.BufferLocation = coneVertexBuffer->GetGPUVirtualAddress();
-	coneVertexBufferView.SizeInBytes = coneVerticesSize;
-	coneVertexBufferView.StrideInBytes = sizeof(Vertex);
+	indexBufferView.BufferLocation = indexBuffer->GetGPUVirtualAddress();
+	indexBufferView.SizeInBytes = indicesSize;
+	indexBufferView.Format = DXGI_FORMAT_R16_UINT;
 
-	ComPtr<ID3D12Resource> coneIndexUploadBuffer;
-	const UINT coneIndicesSize = (UINT)coneIndices.size() * sizeof(std::uint16_t);;
-	CreateDefaultHeapBuffer(commandList.Get(), coneIndices.data(), coneIndicesSize, coneIndexBuffer);
-
-	coneIndexBufferView.BufferLocation = coneIndexBuffer->GetGPUVirtualAddress();
-	coneIndexBufferView.SizeInBytes = coneIndicesSize;
-	coneIndexBufferView.Format = DXGI_FORMAT_R16_UINT;
 
 	//commandList记录了命令但是在提交到commandQueue之前就被reset了，所以需要强制提交一次并等待执行完毕
 	ThrowIfFailed(commandList->Close());
@@ -686,12 +639,15 @@ void DxApp::CreateVertexBuffer()
 
 void DxApp::CreateConstantBuffer()
 {
-	objectConstantBuffer = std::make_unique<UploadHeapConstantBuffer<ObjectConstant>>(d3dDevice.Get(), 2);
+	objectConstantBuffer = std::make_unique<UploadHeapConstantBuffer<ObjectConstant>>(d3dDevice.Get(), staticMeshDatas.size());
 	cbvSrvUavDescriptorSize = d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	cbvHeapHandle = cbvHeap->GetCPUDescriptorHandleForHeapStart();
 	objectConstantBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvHeapHandle, 0);
-	cbvHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
-	objectConstantBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvHeapHandle, 1);
+	for (auto i = 1; i < staticMeshDatas.size(); i++)
+	{
+		cbvHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
+		objectConstantBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvHeapHandle, i);
+	}
 }
 
 void DxApp::CreateDepthStencil()
@@ -718,10 +674,6 @@ void DxApp::CreateDepthStencil()
 		IID_PPV_ARGS(&depthStencilBuffer)));
 
 	d3dDevice->CreateDepthStencilView(depthStencilBuffer.Get(), &depthStencilDesc, dsvHeap->GetCPUDescriptorHandleForHeapStart());
-}
-
-void DxApp::CreateConstantBufferForCone()
-{
 }
 
 void DxApp::CreateSynObject()
@@ -792,10 +744,29 @@ bool DxApp::InitDirectx12()
 	return true;
 }
 
+void DxApp::GetSceneDatas()
+{
+	SceneManage sceneManage;
+	//不开启深度模板缓冲的话，后绘的物体会挡住先绘制的物体，而不是根据实际的深度绘制
+	staticMeshDatas.push_back(sceneManage.GetStaticMeshActorData("SM_Chair"));
+	staticMeshDatas.push_back(sceneManage.GetStaticMeshActorData("Shape_Cone"));
+	cameraData = sceneManage.GetCameraActorData("CameraActor_2");
+}
+
 void DxApp::Init()
 {
+	GetSceneDatas();
 	InitMainWindow();
 	InitDirectx12();
+}
+
+void DxApp::Run()
+{
+	while (isRunning && messageLoop())
+	{
+		OnUpdate();
+		OnRender();
+	}
 }
 
 

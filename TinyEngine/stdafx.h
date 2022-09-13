@@ -24,6 +24,7 @@
 #define mClientWidth 800
 #define mClientHeight 600
 #define Pi 3.1415926535
+#define totalNums 2
 
 #define Windows 0
 #define Mac 1

@@ -1,15 +1,10 @@
 ﻿#include "stdafx.h"
 #include "DxApp.h"
-#include "JsonfileParse.h"
 using namespace std;
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE prevInstance,
 	PSTR cmdLine, int showCmd)
-{
-	//Json解析模块
-	//JsonfileParse parse;
-	//parse.GetStaticMeshActorData("camp");
-	
+{	
 //执行某函数获取平台
 //UINT GetPlatform()
 	UINT platform = 0/*= GetPlatform()*/;

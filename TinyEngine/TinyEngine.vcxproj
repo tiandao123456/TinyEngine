@@ -147,12 +147,12 @@
     <ClInclude Include="Common\UploadHeapConstantBuffer.h" />
     <ClInclude Include="d3dx12.h" />
     <ClInclude Include="DxHelper.h" />
-    <ClInclude Include="JsonfileParse.h" />
+    <ClInclude Include="SceneManage.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="DxApp.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="JsonfileParse.cpp" />
+    <ClCompile Include="SceneManage.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
     </ClCompile>

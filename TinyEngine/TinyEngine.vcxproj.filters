@@ -33,7 +33,7 @@
     <ClInclude Include="Common\UploadHeapConstantBuffer.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="JsonfileParse.h">
+    <ClInclude Include="SceneManage.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
@@ -47,7 +47,7 @@
     <ClCompile Include="DxApp.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="JsonfileParse.cpp">
+    <ClCompile Include="SceneManage.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DxHelper.h"
+#include "SceneManage.h"
 #include <d3d12.h>
 
 #pragma comment(lib,"d3dcompiler.lib")
@@ -14,6 +15,7 @@ class DxApp
 {
 public:
 	static const int swapChainBufferCount = 2;
+	static HWND mhMainWnd;
 
 private:
 	struct Vertex
@@ -21,13 +23,6 @@ private:
 		XMFLOAT3 position;
 		XMFLOAT4 color;
 	};
-
-	struct SceneConstantBuffer
-	{
-		XMFLOAT4X4 worldViewProjMatrix;
-		float padding[48]; // Padding so the constant buffer is 256-byte aligned.
-	};
-	static_assert((sizeof(SceneConstantBuffer) % 256) == 0, "Constant Buffer size must be 256-byte aligned");
 	
 	struct ObjectConstant
 	{
@@ -42,7 +37,6 @@ private:
 	static DxApp* app;
 
 	//window
-	HWND mhMainWnd = nullptr;
 	HINSTANCE mhAppInst = nullptr;
 	std::wstring mMainWndCaption = L"d3d App";
 
@@ -61,36 +55,17 @@ private:
 	ComPtr<ID3D12DescriptorHeap> rtvHeap = nullptr;
 	ComPtr<ID3D12DescriptorHeap> cbvHeap = nullptr;
 	ComPtr<ID3D12DescriptorHeap> dsvHeap = nullptr;
-	ComPtr<ID3D12DescriptorHeap> cbvConeHeap = nullptr;
 	UINT rtvDescriptorSize;
 
 	ComPtr<ID3D12RootSignature> rootSignature = nullptr;
 
-	ComPtr<ID3D12Resource> chairVertexBuffer = nullptr;
-	ComPtr<ID3D12Resource> chairIndexBuffer = nullptr;
 	ComPtr<ID3D12Resource> uploadBuffer = nullptr;
-
-	D3D12_VERTEX_BUFFER_VIEW chairVertexBufferView;
-	D3D12_INDEX_BUFFER_VIEW chairIndexBufferView;
-
-	ComPtr<ID3D12Resource> coneVertexBuffer = nullptr;
-	ComPtr<ID3D12Resource> coneIndexBuffer = nullptr;
-	D3D12_VERTEX_BUFFER_VIEW coneVertexBufferView;
-	D3D12_INDEX_BUFFER_VIEW coneIndexBufferView;
-
 	CD3DX12_VIEWPORT viewport;
 	CD3DX12_RECT scissorRect;
 
 	ComPtr<ID3D12Resource> constantBuffer;
-	SceneConstantBuffer constantBufferData;
-	UINT8* pCbvDataBegin;
 	std::unique_ptr<UploadHeapConstantBuffer<ObjectConstant>> objectConstantBuffer;
 	CD3DX12_CPU_DESCRIPTOR_HANDLE cbvHeapHandle;
-
-	ComPtr<ID3D12Resource> coneConstantBuffer;
-	SceneConstantBuffer coneConstantBufferData;
-	UINT8* pConeCbvDataBegin;
-
 	ComPtr<ID3D12Resource> depthStencilBuffer;
 
 	UINT frameIndex;
@@ -102,20 +77,26 @@ private:
 	XMFLOAT4X4 mView;
 	XMFLOAT4X4 mProj;
 
-	XMFLOAT4X4 mConeWorld;
-	XMFLOAT4X4 mConeView;
-	XMFLOAT4X4 mConeProj;
-
-	std::vector<Vertex> chairVertices;
-	std::vector<std::uint16_t> chairIndices;
-
-	std::vector<Vertex> coneVertices;
-	std::vector<std::uint16_t> coneIndices;
-
 	UINT cbvSrvUavDescriptorSize;
 
-private:
+	//存放场景数据的容器
+	std::vector<staticMeshActor> staticMeshDatas;
+	cameraInfo cameraData;
 
+	std::vector<std::vector<float>> modelMatrixDatas;
+	std::vector<int> staticMeshIndicesNums;
+
+	D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
+	D3D12_INDEX_BUFFER_VIEW indexBufferView;
+
+	ComPtr<ID3D12Resource> vertexBuffer = nullptr;
+	ComPtr<ID3D12Resource> indexBuffer = nullptr;
+	std::vector<Vertex> allVertices;
+	std::vector<std::uint16_t> allIndices;
+	bool isRunning = true;
+
+private:
+	bool messageLoop();
 	//使用getApp获取static指针
 	static DxApp* getApp()
 	{
@@ -125,7 +106,6 @@ private:
 
 	bool InitMainWindow();
 	bool InitDirectx12();
-
 	void EnumAdapter();
 	void CreateCommandObjects();
 	void CreateSwapChain();
@@ -143,9 +123,7 @@ private:
 	void OnRender();
 	void OnUpdate();
 	void OnDestroy();
-
-	void ReadDataFromFile(UINT vertexNums, UINT indexNums, const char* vertexFileName, const char* indexFileName,
-		std::vector<Vertex>& vertices, std::vector<std::uint16_t>& indices, bool isChair);
+	void GetSceneDatas();
 	void CreateDefaultHeapBuffer(ID3D12GraphicsCommandList* cmdList, const void* data, const int size, ComPtr<ID3D12Resource>& vertexBuffer);
 
 public:
@@ -167,23 +145,11 @@ public:
 				   0.0f,1.0f,0.0f,0.0f,
 				   0.0f,0.0f,1.0f,0.0f,
 				   0.0f,0.0f,0.0f,1.0f };
-		mConeWorld = { 1.0f,0.0f,0.0f,0.0f,
-				   0.0f,1.0f,0.0f,0.0f,
-				   0.0f,0.0f,1.0f,0.0f,
-				   0.0f,0.0f,0.0f,1.0f };
-		mConeView = { 1.0f,0.0f,0.0f,0.0f,
-				   0.0f,1.0f,0.0f,0.0f,
-				   0.0f,0.0f,1.0f,0.0f,
-				   0.0f,0.0f,0.0f,1.0f };
-		mConeProj = { 1.0f,0.0f,0.0f,0.0f,
-				   0.0f,1.0f,0.0f,0.0f,
-				   0.0f,0.0f,1.0f,0.0f,
-				   0.0f,0.0f,0.0f,1.0f };
 		aspectRatio = static_cast<float>(mClientWidth) / static_cast<float>(mClientHeight);
 	}
 
 	//给外部调用的接口
 	void Init();
-	int Run();
+	void Run();
 };
 
