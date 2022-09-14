@@ -1,5 +1,6 @@
 ﻿#include "stdafx.h"
 #include "DxApp.h"
+#include "TEngine.h"
 using namespace std;
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE prevInstance,
@@ -10,13 +11,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE prevInstance,
 	UINT platform = 0/*= GetPlatform()*/;
 
 #if Windows == platform
+
+	TEngine tEngine;
+	tEngine.Init();
+	tEngine.Run();
+	 
+	//DxApp instance;
+	//instance.Init();
+
+	////窗口的主循环
+	//instance.Run();
 	//执行初始化Windows的逻辑
 	//下述同理
-	DxApp instance(hInstance);
-	instance.Init();
-
-	//窗口的主循环
-	instance.Run();
 #endif
 
 #if Mac == platform

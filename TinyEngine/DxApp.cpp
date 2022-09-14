@@ -1,8 +1,8 @@
 #include "stdafx.h"
 #include "DxApp.h"
+#include "TEngine.h"
 
-DxApp* DxApp::app = nullptr;
-HWND DxApp::mhMainWnd = nullptr;
+//DxApp* DxApp::app = nullptr;
 
 void DxApp::OnRender()
 {
@@ -22,22 +22,22 @@ void DxApp::OnRender()
 //更新worldViewProj矩阵
 void DxApp::OnUpdate()
 {
-	XMVECTOR pos = XMVectorSet(cameraData.location[0], cameraData.location[1], cameraData.location[2], 1.0f);
-	XMVECTOR target = XMVectorSet(cameraData.target[0], cameraData.target[1], cameraData.target[2], 1.0f);
+	XMVECTOR pos = XMVectorSet(TEngine::cameraData.location[0], TEngine::cameraData.location[1], TEngine::cameraData.location[2], 1.0f);
+	XMVECTOR target = XMVectorSet(TEngine::cameraData.target[0], TEngine::cameraData.target[1], TEngine::cameraData.target[2], 1.0f);
 	XMVECTOR up = XMVectorSet(0.0, 0.0f, 1.0f, 0.0f);
 
 	XMMATRIX view = XMMatrixLookAtLH(pos, target, up);
 	XMStoreFloat4x4(&mView, view);
 
 	int position = 0;
-	for(auto i=0;i<modelMatrixDatas.size();i++)
+	for(auto i=0;i<TEngine::modelMatrixDatas.size();i++)
 	{
 		XMMATRIX world =
 		{
-			modelMatrixDatas[i][0],modelMatrixDatas[i][1],modelMatrixDatas[i][2],modelMatrixDatas[i][3],
-			modelMatrixDatas[i][4],modelMatrixDatas[i][5],modelMatrixDatas[i][6],modelMatrixDatas[i][7],
-			modelMatrixDatas[i][8],modelMatrixDatas[i][9],modelMatrixDatas[i][10],modelMatrixDatas[i][11],
-			modelMatrixDatas[i][12],modelMatrixDatas[i][13],modelMatrixDatas[i][14],modelMatrixDatas[i][15]
+			TEngine::modelMatrixDatas[i][0],TEngine::modelMatrixDatas[i][1],TEngine::modelMatrixDatas[i][2],TEngine::modelMatrixDatas[i][3],
+			TEngine::modelMatrixDatas[i][4],TEngine::modelMatrixDatas[i][5],TEngine::modelMatrixDatas[i][6],TEngine::modelMatrixDatas[i][7],
+			TEngine::modelMatrixDatas[i][8],TEngine::modelMatrixDatas[i][9],TEngine::modelMatrixDatas[i][10],TEngine::modelMatrixDatas[i][11],
+			TEngine::modelMatrixDatas[i][12],TEngine::modelMatrixDatas[i][13],TEngine::modelMatrixDatas[i][14],TEngine::modelMatrixDatas[i][15]
 		};
 		XMMATRIX p = XMMatrixPerspectiveFovLH(0.25f * Pi, aspectRatio, 1.0f, 1000.0f);
 		XMStoreFloat4x4(&mProj, p);
@@ -97,7 +97,7 @@ void DxApp::PopulateCommandList()
 	commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
 	commandList->IASetIndexBuffer(&indexBufferView);
 
-	for (auto i = 0; i < staticMeshDatas.size(); i++)
+	for (auto i = 0; i < TEngine::staticMeshDatas.size(); i++)
 	{
 		handle.Offset(cbvSrvUavDescriptorSize * i);
 		// 第一个参数表示绑定的槽位号，都绑定在寄存器b0上，但是有两个const buffer所以需要偏移
@@ -106,75 +106,13 @@ void DxApp::PopulateCommandList()
 			// 绘制一个实例，第一个参数为索引数量
 			commandList->DrawIndexedInstanced((UINT)staticMeshIndicesNums[0], 1, 0, 0, 0);
 		else
-			commandList->DrawIndexedInstanced((UINT)staticMeshIndicesNums[i], 1, (UINT)staticMeshIndicesNums[i-1], staticMeshDatas[i-1].vertices.size(), 0);
+			commandList->DrawIndexedInstanced((UINT)staticMeshIndicesNums[i], 1, (UINT)staticMeshIndicesNums[i-1], TEngine::staticMeshDatas[i-1].vertices.size(), 0);
 	}
 	auto y = CD3DX12_RESOURCE_BARRIER::Transition(renderTargets[frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
 	// 表明后台缓冲现在将被呈现
 	commandList->ResourceBarrier(1, &y);
 
 	ThrowIfFailed(commandList->Close());
-}
-
-//回调函数,有鼠标或键盘消息就触发
-LRESULT CALLBACK DxApp::MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
-
-	switch (msg)
-	{
-	case WM_PAINT:
-		//DxApp::getApp()->OnUpdate();
-		//DxApp::getApp()->OnRender();
-		//绘制将不在此处处理
-		PAINTSTRUCT ps;
-		BeginPaint(DxApp::mhMainWnd, &ps);
-		EndPaint(DxApp::mhMainWnd, &ps);
-		return 0;
-	case WM_DESTROY:
-		PostQuitMessage(0);
-		return 0;
-	}
-	return DefWindowProc(hwnd, msg, wParam, lParam);
-}
-
-//窗口的初始化
-bool DxApp::InitMainWindow()
-{
-	WNDCLASS wc;
-	wc.style = CS_HREDRAW | CS_VREDRAW;
-	wc.lpfnWndProc = MainWndProc;
-	wc.cbClsExtra = 0;
-	wc.cbWndExtra = 0;
-	wc.hInstance = mhAppInst;
-	wc.hIcon = LoadIcon(0, IDI_APPLICATION);
-	wc.hCursor = LoadCursor(0, IDC_ARROW);
-	wc.hbrBackground = (HBRUSH)GetStockObject(NULL_BRUSH);
-	wc.lpszMenuName = 0;
-	wc.lpszClassName = L"MainWnd";
-
-	if (!RegisterClass(&wc))
-	{
-		MessageBox(0, L"RegisterClass Failed.", 0, 0);
-		return false;
-	}
-
-	RECT R = { 0, 0, mClientWidth, mClientHeight };
-	AdjustWindowRect(&R, WS_OVERLAPPEDWINDOW, false);
-	int width = R.right - R.left;
-	int height = R.bottom - R.top;
-
-	mhMainWnd = CreateWindow(L"MainWnd", mMainWndCaption.c_str(),
-		WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, width, height, 0, 0, mhAppInst, 0);
-
-	if (!mhMainWnd)
-	{
-		MessageBox(0, L"CreateWindow Failed.", 0, 0);
-		return false;
-	}
-
-	ShowWindow(mhMainWnd, SW_SHOW);
-	UpdateWindow(mhMainWnd);
-
-	return true;
 }
 
 void DxApp::OnDestroy()
@@ -184,21 +122,6 @@ void DxApp::OnDestroy()
 	WaitForPreviousFrame();
 
 	CloseHandle(fenceEvent);
-}
-
-bool DxApp::messageLoop()
-{
-	bool quit = false;
-	MSG Msg = {};
-	while (PeekMessage(&Msg, NULL, 0, 0, PM_REMOVE))
-	{
-		TranslateMessage(&Msg);
-		DispatchMessage(&Msg);
-
-		if (Msg.message == WM_QUIT)
-			quit = true;
-	}
-	return !quit;
 }
 
 void DxApp::EnumAdapter()
@@ -269,7 +192,7 @@ void DxApp::CreateSwapChain()
 	ComPtr<IDXGISwapChain1> swapChain;
 	ThrowIfFailed(dxgiFactory->CreateSwapChainForHwnd(
 		commandQueue.Get(),        // 交换链需要命令队列才能刷新，比如命令队列中一个指令指示交换链进行前后台缓冲的交换
-		mhMainWnd,
+		TEngine::mhMainWnd,
 		&swapChainDesc,
 		nullptr,
 		nullptr,
@@ -277,7 +200,7 @@ void DxApp::CreateSwapChain()
 	));
 
 	//该窗口将不会响应alt-enter序列（按键组合）
-	ThrowIfFailed(dxgiFactory->MakeWindowAssociation(mhMainWnd, DXGI_MWA_NO_ALT_ENTER));
+	ThrowIfFailed(dxgiFactory->MakeWindowAssociation(TEngine::mhMainWnd, DXGI_MWA_NO_ALT_ENTER));
 
 	ThrowIfFailed(swapChain.As(&dxgiSwapChain));
 	frameIndex = dxgiSwapChain->GetCurrentBackBufferIndex();
@@ -305,7 +228,7 @@ void DxApp::CreateRtvAndCbvAndDsv()
 		// and that descriptors contained in it can be referenced by a root table.
 		// NumDescripters为1的含义为该常量缓冲视图描述符堆能够绑定到渲染管线上
 		D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc;
-		cbvHeapDesc.NumDescriptors = staticMeshDatas.size();
+		cbvHeapDesc.NumDescriptors = TEngine::staticMeshDatas.size();
 		cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 		cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 		cbvHeapDesc.NodeMask = 0;
@@ -599,17 +522,16 @@ void DxApp::CreateDefaultHeapBuffer(ID3D12GraphicsCommandList* cmdList, const vo
 
 void DxApp::CreateVertexBuffer()
 {
-	for (auto i = 0; i < staticMeshDatas.size(); i++)
+	for (auto i = 0; i < TEngine::staticMeshDatas.size(); i++)
 	{
-		modelMatrixDatas.push_back(staticMeshDatas[i].modelMatrix);
-		staticMeshIndicesNums.push_back(staticMeshDatas[i].indiceNum);
+		staticMeshIndicesNums.push_back(TEngine::staticMeshDatas[i].indiceNum);
 
-		auto subVertices = staticMeshDatas[i].vertices;
+		auto subVertices = TEngine::staticMeshDatas[i].vertices;
 		for(auto j=0;j< subVertices.size();j++)
 		{ 
 			allVertices.push_back(Vertex{ subVertices[j].position,subVertices[j].color });
 		}
-		auto subIndices = staticMeshDatas[i].indices;
+		auto subIndices = TEngine::staticMeshDatas[i].indices;
 		for (auto j = 0; j < subIndices.size(); j++)
 		{
 			allIndices.push_back(subIndices[j]);
@@ -639,17 +561,17 @@ void DxApp::CreateVertexBuffer()
 
 void DxApp::CreateConstantBuffer()
 {
-	objectConstantBuffer = std::make_unique<UploadHeapConstantBuffer<ObjectConstant>>(d3dDevice.Get(), staticMeshDatas.size());
+	objectConstantBuffer = std::make_unique<UploadHeapConstantBuffer<ObjectConstant>>(d3dDevice.Get(), TEngine::staticMeshDatas.size());
 	cbvSrvUavDescriptorSize = d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	cbvHeapHandle = cbvHeap->GetCPUDescriptorHandleForHeapStart();
 	objectConstantBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvHeapHandle, 0);
-	for (auto i = 1; i < staticMeshDatas.size(); i++)
+	for (auto i = 1; i < TEngine::staticMeshDatas.size(); i++)
 	{
 		cbvHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
 		objectConstantBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvHeapHandle, i);
 	}
 }
-
+//不开启深度模板缓冲的话，后绘的物体会挡住先绘制的物体，而不是根据实际的深度绘制
 void DxApp::CreateDepthStencil()
 {
 	D3D12_DEPTH_STENCIL_VIEW_DESC depthStencilDesc = {};
@@ -744,29 +666,10 @@ bool DxApp::InitDirectx12()
 	return true;
 }
 
-void DxApp::GetSceneDatas()
+void DxApp::RenderTick()
 {
-	SceneManage sceneManage;
-	//不开启深度模板缓冲的话，后绘的物体会挡住先绘制的物体，而不是根据实际的深度绘制
-	staticMeshDatas.push_back(sceneManage.GetStaticMeshActorData("SM_Chair"));
-	staticMeshDatas.push_back(sceneManage.GetStaticMeshActorData("Shape_Cone"));
-	cameraData = sceneManage.GetCameraActorData("CameraActor_2");
-}
-
-void DxApp::Init()
-{
-	GetSceneDatas();
-	InitMainWindow();
-	InitDirectx12();
-}
-
-void DxApp::Run()
-{
-	while (isRunning && messageLoop())
-	{
-		OnUpdate();
-		OnRender();
-	}
+	OnUpdate();
+	OnRender();
 }
 
 

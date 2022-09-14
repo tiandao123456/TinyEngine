@@ -15,8 +15,6 @@ class DxApp
 {
 public:
 	static const int swapChainBufferCount = 2;
-	static HWND mhMainWnd;
-
 private:
 	struct Vertex
 	{
@@ -31,14 +29,7 @@ private:
 	
 	bool useWarpDevice;
 	float aspectRatio;
-	std::wstring assetsPath;
-
-	//指向实例的指针
-	static DxApp* app;
-
-	//window
-	HINSTANCE mhAppInst = nullptr;
-	std::wstring mMainWndCaption = L"d3d App";
+	//static DxApp *app;
 
 	//directx12
 	ComPtr<IDXGIFactory4> dxgiFactory = nullptr;
@@ -78,12 +69,6 @@ private:
 	XMFLOAT4X4 mProj;
 
 	UINT cbvSrvUavDescriptorSize;
-
-	//存放场景数据的容器
-	std::vector<staticMeshActor> staticMeshDatas;
-	cameraInfo cameraData;
-
-	std::vector<std::vector<float>> modelMatrixDatas;
 	std::vector<int> staticMeshIndicesNums;
 
 	D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
@@ -96,16 +81,11 @@ private:
 	bool isRunning = true;
 
 private:
-	bool messageLoop();
-	//使用getApp获取static指针
-	static DxApp* getApp()
-	{
-		return app;
-	}
-	static LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
-
-	bool InitMainWindow();
-	bool InitDirectx12();
+	////使用getApp获取static指针
+	//static DxApp* getApp()
+	//{
+	//	return app;
+	//}
 	void EnumAdapter();
 	void CreateCommandObjects();
 	void CreateSwapChain();
@@ -115,7 +95,6 @@ private:
 	void CreateVertexBuffer();
 	void CreateConstantBuffer();
 	void CreateDepthStencil();
-	void CreateConstantBufferForCone();
 	void CreateSynObject();
 	void WaitForPreviousFrame();
 	void PopulateCommandList();
@@ -123,16 +102,15 @@ private:
 	void OnRender();
 	void OnUpdate();
 	void OnDestroy();
-	void GetSceneDatas();
 	void CreateDefaultHeapBuffer(ID3D12GraphicsCommandList* cmdList, const void* data, const int size, ComPtr<ID3D12Resource>& vertexBuffer);
 
 public:
 	//在构造函数中初始化static指针
-	DxApp(HINSTANCE parameter) :mhAppInst(parameter),
+	DxApp():
 		viewport(0.0f, 0.0f, static_cast<float>(mClientWidth), static_cast<float>(mClientHeight)),
 		scissorRect(0, 0, static_cast<LONG>(mClientWidth), static_cast<LONG>(mClientHeight))
 	{
-		app = this;
+		//app = this;
 		mWorld = { 1.0f,0.0f,0.0f,0.0f,
 				   0.0f,1.0f,0.0f,0.0f,
 				   0.0f,0.0f,1.0f,0.0f,
@@ -147,9 +125,8 @@ public:
 				   0.0f,0.0f,0.0f,1.0f };
 		aspectRatio = static_cast<float>(mClientWidth) / static_cast<float>(mClientHeight);
 	}
-
-	//给外部调用的接口
-	void Init();
-	void Run();
+	//外部调用接口
+	bool InitDirectx12();
+	void RenderTick();
 };
 

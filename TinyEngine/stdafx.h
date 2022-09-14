@@ -20,6 +20,7 @@
 #include <fstream>
 #include <conio.h>
 #include <memory.h>
+#include <vector>
 
 #define mClientWidth 800
 #define mClientHeight 600

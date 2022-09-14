@@ -150,12 +150,14 @@
     <ClInclude Include="SceneManage.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="DxApp.h" />
+    <ClInclude Include="TEngine.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="SceneManage.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="TEngine.cpp" />
     <ClCompile Include="TinyEngine.cpp" />
     <ClCompile Include="DxApp.cpp" />
   </ItemGroup>
