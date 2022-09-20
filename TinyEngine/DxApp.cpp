@@ -88,15 +88,15 @@ void DxApp::PopulateCommandList()
 	// 当资源变成只读状态时，表明某些ALU可以进行对资源进行操作了，只写同理
 	commandList->ResourceBarrier(1, &x);
 
-	ID3D12DescriptorHeap* ppHeaps[] = { cbvHeap.Get() };
+	ID3D12DescriptorHeap* ppHeaps[] = { cbvSrvUavHeap.Get() };
 	commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
-	CD3DX12_GPU_DESCRIPTOR_HANDLE handle(cbvHeap->GetGPUDescriptorHandleForHeapStart());
-	commandList->SetGraphicsRootDescriptorTable(0, handle);
+	commandList->SetGraphicsRootSignature(rootSignature.Get());
 
 	commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
 	commandList->IASetIndexBuffer(&indexBufferView);
 
+	CD3DX12_GPU_DESCRIPTOR_HANDLE handle(cbvSrvUavHeap->GetGPUDescriptorHandleForHeapStart());
 	for (auto i = 0; i < TEngine::staticMeshDatas.size(); i++)
 	{
 		handle.Offset(cbvSrvUavDescriptorSize * i);
@@ -169,17 +169,18 @@ void DxApp::EnumAdapter()
 //2、清空命令列表中的命令但是使之保持原本的容量避免频繁的内存分配带来的消耗
 void DxApp::CreateCommandObjects()
 {
-}
-
-void DxApp::CreateSwapChain()
-{
 	D3D12_COMMAND_QUEUE_DESC queueDesc = {};
 	queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
 	queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
 	//由显卡适配器创建命令队列，命令队列由GPU维护
 	ThrowIfFailed(d3dDevice->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&commandQueue)));
+	ThrowIfFailed(d3dDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&commandAllocator)));
+	// Create the command list.
+	ThrowIfFailed(d3dDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator.Get(), pipelineState.Get(), IID_PPV_ARGS(&commandList)));
+}
 
-	// 描述交换链并创建
+void DxApp::CreateSwapChain()
+{
 	DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
 	swapChainDesc.BufferCount = swapChainBufferCount;
 	swapChainDesc.Width = mClientWidth;
@@ -206,73 +207,101 @@ void DxApp::CreateSwapChain()
 	frameIndex = dxgiSwapChain->GetCurrentBackBufferIndex();
 }
 
-void DxApp::CreateRtvAndCbvAndDsv()
+void DxApp::CreateRtvAndDsvDescriptorHeap()
 {
 	// descriptor表示资源在显存中的存放地址（该资源可能是顶点纹理等）
 	// heaps则是存放descriptor的一片内存
+	// 创建渲染目标视图（渲染目标视图是渲染管线的最终目标输出的位置，因为渲染管线最终不会输出到屏幕上，会先输出到渲染目标视图上）
+	// 最后屏幕获取渲染目标视图的内容并呈现
+	// Describe and create a render target view (RTV) descriptor heap.
+	D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
+	rtvHeapDesc.NumDescriptors = swapChainBufferCount;
+	rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+	rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+	ThrowIfFailed(d3dDevice->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&rtvHeap)));
+
+	// 计算RTV描述符的大小
+	rtvDescriptorSize = d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+
+	//获得渲染目标视图描述符堆的起始位置
+	//		| RTV Descriptor Heap |
+	//		|---------------------|
+	//0		| BackBuffer0's rtv   |
+	//		|---------------------|
+	//1		| BackBuffer1's rtv   |
+	//		|---------------------|
+	//上面创建了渲染目标视图的描述符堆，之后在该堆的基础上再创建渲染目标视图
+	//所以需要先拿到堆的起始地址，之后根据描述符的大小进行偏移创建渲染目标视图
+	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(rtvHeap->GetCPUDescriptorHandleForHeapStart());
+	// Create a RTV for each frame.
+	for (UINT n = 0; n < swapChainBufferCount; n++)
 	{
-		// 创建渲染目标视图（渲染目标视图是渲染管线的最终目标输出的位置，因为渲染管线最终不会输出到屏幕上，会先输出到渲染目标视图上）
-		// 最后屏幕获取渲染目标视图的内容并呈现
-		// Describe and create a render target view (RTV) descriptor heap.
-		D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
-		rtvHeapDesc.NumDescriptors = swapChainBufferCount;
-		rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-		rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-		ThrowIfFailed(d3dDevice->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&rtvHeap)));
-
-		//计算RTV描述符的大小
-		rtvDescriptorSize = d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-
-		// Describe and create a constant buffer view (CBV) descriptor heap.
-		// Flags indicate that this descriptor heap can be bound to the pipeline 
-		// and that descriptors contained in it can be referenced by a root table.
-		// NumDescripters为1的含义为该常量缓冲视图描述符堆能够绑定到渲染管线上
-		D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc;
-		cbvHeapDesc.NumDescriptors = TEngine::staticMeshDatas.size();
-		cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-		cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-		cbvHeapDesc.NodeMask = 0;
-		ThrowIfFailed(d3dDevice->CreateDescriptorHeap(&cbvHeapDesc, IID_PPV_ARGS(&cbvHeap)));
+		ThrowIfFailed(dxgiSwapChain->GetBuffer(n, IID_PPV_ARGS(&renderTargets[n])));
+		d3dDevice->CreateRenderTargetView(renderTargets[n].Get(), nullptr, rtvHandle);
+		rtvHandle.Offset(1, rtvDescriptorSize);
 	}
-
-	// Create frame resources.
-	{
-		//获得渲染目标视图描述符堆的起始位置
-		//		| RTV Descriptor Heap |
-		//		|---------------------|
-		//0		| BackBuffer0's rtv   |
-		//		|---------------------|
-		//1		| BackBuffer1's rtv   |
-		//		|---------------------|
-		//上面创建了渲染目标视图的描述符堆，之后再该堆的基础上再创建渲染目标视图
-		//所以需要先拿到堆的起始地址，之后根据描述符的大小进行偏移创建渲染目标视图
-		CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(rtvHeap->GetCPUDescriptorHandleForHeapStart());
-
-		// Create a RTV for each frame.
-		for (UINT n = 0; n < swapChainBufferCount; n++)
-		{
-			ThrowIfFailed(dxgiSwapChain->GetBuffer(n, IID_PPV_ARGS(&renderTargets[n])));
-			d3dDevice->CreateRenderTargetView(renderTargets[n].Get(), nullptr, rtvHandle);
-			rtvHandle.Offset(1, rtvDescriptorSize);
-		}
-	}
-
 	//创建深度模板堆
 	D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
 	dsvHeapDesc.NumDescriptors = 1;
 	dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
 	dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 	ThrowIfFailed(d3dDevice->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&dsvHeap)));
-
-	ThrowIfFailed(d3dDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&commandAllocator)));
 }
 
+//不开启深度模板缓冲的话，后绘的物体会挡住先绘制的物体，而不是根据实际的深度绘制
+void DxApp::CreateDepthStencil()
+{
+	D3D12_DEPTH_STENCIL_VIEW_DESC depthStencilDesc = {};
+	depthStencilDesc.Format = DXGI_FORMAT_D32_FLOAT;
+	depthStencilDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+	depthStencilDesc.Flags = D3D12_DSV_FLAG_NONE;
+
+	D3D12_CLEAR_VALUE depthOptimizedClearValue = {};
+	depthOptimizedClearValue.Format = DXGI_FORMAT_D32_FLOAT;
+	depthOptimizedClearValue.DepthStencil.Depth = 1.0f;
+	depthOptimizedClearValue.DepthStencil.Stencil = 0;
+
+	CD3DX12_HEAP_PROPERTIES heapProperties2 = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+	CD3DX12_RESOURCE_DESC tex2D = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_D32_FLOAT, mClientWidth, mClientHeight, 1, 0, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL);
+
+	ThrowIfFailed(d3dDevice->CreateCommittedResource(
+		&heapProperties2,
+		D3D12_HEAP_FLAG_NONE,
+		&tex2D,
+		D3D12_RESOURCE_STATE_DEPTH_WRITE,
+		&depthOptimizedClearValue,
+		IID_PPV_ARGS(&depthStencilBuffer)));
+
+	d3dDevice->CreateDepthStencilView(depthStencilBuffer.Get(), &depthStencilDesc, dsvHeap->GetCPUDescriptorHandleForHeapStart());
+}
+
+void DxApp::LoadTexture()
+{
+	//从文件夹中读取两个dds文件
+	auto diffuseTex = std::make_unique<Texture>();
+	diffuseTex->Name = "diffuseTex";
+	diffuseTex->Filename = L"./Resources/bricks.dds";
+	ThrowIfFailed(DirectX::CreateDDSTextureFromFile12(d3dDevice.Get(),
+		commandList.Get(), diffuseTex->Filename.c_str(),
+		diffuseTex->Resource, diffuseTex->UploadHeap));
+
+	auto normalTex = std::make_unique<Texture>();
+	normalTex->Name = "normalTex";
+	normalTex->Filename = L"./Resources/bricks_nmap.dds";
+	ThrowIfFailed(DirectX::CreateDDSTextureFromFile12(d3dDevice.Get(),
+		commandList.Get(), normalTex->Filename.c_str(),
+		normalTex->Resource, normalTex->UploadHeap));
+
+	//键值对保存，name对应uni_ptr
+	textures[diffuseTex->Name] = std::move(diffuseTex);
+	textures[normalTex->Name] = std::move(normalTex);
+}
+
+//描述符表与描述符堆的关系：描述符表实际上是描述符堆的子范围
+//SRV如果想要传进shader中，必须放入到描述符表中（descriptor table）
+//然后CBV同样也可以放到描述符表中，也可以不放直接传输到shader中
 void DxApp::CreateRootSignature()
 {
-	//创建根签名，该根签名包含一个描述符表，该描述符表中有一个CBV
-	//描述符表与描述符堆的关系：描述符表实际上是描述符堆的子范围
-	//首先SRV如果想要传进shader中，必须放入到描述符表中（descriptor table）
-	//然后CBV同样也可以放到描述符表中，也可以不放直接传输到shader中
 	D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
 
 	// This is the highest version the sample supports. If CheckFeatureSupport succeeds, the HighestVersion returned will not be greater than this.
@@ -283,39 +312,42 @@ void DxApp::CreateRootSignature()
 		featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
 	}
 
-	//创建根签名的准备工作
-	//描述描述符的范围
-	CD3DX12_DESCRIPTOR_RANGE1 ranges[1];
+	//有两个texture、一个const buffer
+	CD3DX12_DESCRIPTOR_RANGE1 descRange[2];
+
+	//一个CBV，绑定到以b0为起点的descriptor table上
+	descRange[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, TEngine::staticMeshDatas.size(), 0);
+	//总共有两个SRV，绑定到以t0为起点的descriptor table上
+	descRange[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0);
+
 	CD3DX12_ROOT_PARAMETER1 rootParameters[1];
+	//第一个参数表示为描述符区域的数量，有CBV与SRV两个区域
+	rootParameters[0].InitAsDescriptorTable(2, &descRange[0], D3D12_SHADER_VISIBILITY_ALL);
 
-	//第一个参数表明描述符的类型
-	//第二个参数表明描述符的数量
-	//第三个参数表明寄存器映射,描述符为CBV 0即该描述符映射到寄存器b0中，从shader中也可以看到对应关系
-	ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
-	//描述符表的初始化，该描述符表中只有一个参数
-	rootParameters[0].InitAsDescriptorTable(1, &ranges[0], D3D12_SHADER_VISIBILITY_VERTEX);
+	//采样器描述
+	D3D12_STATIC_SAMPLER_DESC sampler = {};
+	sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+	sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+	sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+	sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+	sampler.MipLODBias = 0;
+	sampler.MaxAnisotropy = 0;
+	sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+	sampler.BorderColor = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK;
+	sampler.MinLOD = 0.0f;
+	sampler.MaxLOD = D3D12_FLOAT32_MAX;
+	sampler.ShaderRegister = 0;
+	sampler.RegisterSpace = 0;
+	sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 
-	// Allow input layout and deny uneccessary access to certain pipeline stages.
-	// 对渲染管线某些阶段的拒接访问和允许访问
-	D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags =
-		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
-		D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
-		D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-		D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
-		D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS;
-
-	//根签名描述
 	CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc;
-	rootSignatureDesc.Init_1_1(_countof(rootParameters), rootParameters, 0, nullptr, rootSignatureFlags);
+	rootSignatureDesc.Init_1_1(_countof(rootParameters), rootParameters, 1, &sampler, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
 	ComPtr<ID3DBlob> signature;
 	ComPtr<ID3DBlob> error;
-	//根签名的序列化
 	ThrowIfFailed(D3DX12SerializeVersionedRootSignature(&rootSignatureDesc, featureData.HighestVersion, &signature, &error));
-	//创建根签名
 	ThrowIfFailed(d3dDevice->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&rootSignature)));
 }
-
 
 void DxApp::CreatePipelineState()
 {
@@ -339,7 +371,9 @@ void DxApp::CreatePipelineState()
 	{
 		//顶点位置从0偏移处开始，顶点颜色从第12个字节（x,y,z）开始
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 32, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
 	};
 
 	// Describe and create the graphics pipeline state object (PSO).
@@ -361,9 +395,6 @@ void DxApp::CreatePipelineState()
 	//描述资源的多重采样，此处设置为1即不进行多重采样
 	psoDesc.SampleDesc.Count = 1;
 	ThrowIfFailed(d3dDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pipelineState)));
-
-	// Create the command list.
-	ThrowIfFailed(d3dDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator.Get(), pipelineState.Get(), IID_PPV_ARGS(&commandList)));
 
 	// Command lists are created in the recording state, but there is nothing
 	// to record yet. The main loop expects it to be closed, so close it now.
@@ -412,10 +443,12 @@ void DxApp::CreateDefaultHeapBuffer(ID3D12GraphicsCommandList* cmdList, const vo
 	// Schedule to copy the data to the default buffer resource.  At a high level, the helper function UpdateSubresources
 	// will copy the CPU memory into the intermediate upload heap.  Then, using ID3D12CommandList::CopySubresourceRegion,
 	// the intermediate upload heap data will be copied to mBuffer.
+	// 转换资源的状态，将资源从upload buffer拷贝到default buffer
 	auto barrierFromCommonToDest = CD3DX12_RESOURCE_BARRIER::Transition(defaultBuffer.Get(),D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST);
 	cmdList->ResourceBarrier(1, &barrierFromCommonToDest);
 	UpdateSubresources<1>(cmdList, defaultBuffer.Get(), uploadBuffer.Get(), 0, 0, 1, &subResourceData);
 
+	//转换资源状态，资源变为可读
 	auto barrierFromDestToRead = CD3DX12_RESOURCE_BARRIER::Transition(defaultBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ);
 	cmdList->ResourceBarrier(1, &barrierFromDestToRead);
 
@@ -520,7 +553,7 @@ void DxApp::CreateDefaultHeapBuffer(ID3D12GraphicsCommandList* cmdList, const vo
 	//vertexBuffer->Unmap(0, nullptr);
 }
 
-void DxApp::CreateVertexBuffer()
+void DxApp::CreateVertexAndIndexBuffer()
 {
 	for (auto i = 0; i < TEngine::staticMeshDatas.size(); i++)
 	{
@@ -529,7 +562,7 @@ void DxApp::CreateVertexBuffer()
 		auto subVertices = TEngine::staticMeshDatas[i].vertices;
 		for(auto j=0;j< subVertices.size();j++)
 		{ 
-			allVertices.push_back(Vertex{ subVertices[j].position,subVertices[j].color });
+			allVertices.push_back(Vertex{ subVertices[j].position,subVertices[j].normal,subVertices[j].uv,subVertices[j].color });
 		}
 		auto subIndices = TEngine::staticMeshDatas[i].indices;
 		for (auto j = 0; j < subIndices.size(); j++)
@@ -559,43 +592,45 @@ void DxApp::CreateVertexBuffer()
 	commandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
 }
 
-void DxApp::CreateConstantBuffer()
+//先建堆再建描述符
+void DxApp::CreateCbvSrvUavDescriptor()
 {
+	// Describe and create a constant buffer view (CBV) descriptor heap.
+	// Flags indicate that this descriptor heap can be bound to the pipeline 
+	// and that descriptors contained in it can be referenced by a root table.
+	// NumDescripters为1的含义为该常量缓冲视图描述符堆能够绑定到渲染管线上
+	D3D12_DESCRIPTOR_HEAP_DESC cbvSrvUavHeapDesc;
+	// 描述符堆中的CBV、SRV、UAV总数，2个SRV与一个CBV
+	cbvSrvUavHeapDesc.NumDescriptors = TEngine::staticMeshDatas.size() + 2;
+	cbvSrvUavHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	cbvSrvUavHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	cbvSrvUavHeapDesc.NodeMask = 0;
+	ThrowIfFailed(d3dDevice->CreateDescriptorHeap(&cbvSrvUavHeapDesc, IID_PPV_ARGS(&cbvSrvUavHeap)));
+
 	objectConstantBuffer = std::make_unique<UploadHeapConstantBuffer<ObjectConstant>>(d3dDevice.Get(), TEngine::staticMeshDatas.size());
 	cbvSrvUavDescriptorSize = d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	cbvHeapHandle = cbvHeap->GetCPUDescriptorHandleForHeapStart();
-	objectConstantBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvHeapHandle, 0);
+	cbvSrvUavHeapHandle = cbvSrvUavHeap->GetCPUDescriptorHandleForHeapStart();
+	objectConstantBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvSrvUavHeapHandle, 0);
 	for (auto i = 1; i < TEngine::staticMeshDatas.size(); i++)
 	{
-		cbvHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
-		objectConstantBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvHeapHandle, i);
+		cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
+		objectConstantBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvSrvUavHeapHandle, i);
 	}
-}
-//不开启深度模板缓冲的话，后绘的物体会挡住先绘制的物体，而不是根据实际的深度绘制
-void DxApp::CreateDepthStencil()
-{
-	D3D12_DEPTH_STENCIL_VIEW_DESC depthStencilDesc = {};
-	depthStencilDesc.Format = DXGI_FORMAT_D32_FLOAT;
-	depthStencilDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-	depthStencilDesc.Flags = D3D12_DSV_FLAG_NONE;
+	auto diffuseTex = textures["diffuseTex"]->Resource;
+	auto normalTex = textures["normalTex"]->Resource;
 
-	D3D12_CLEAR_VALUE depthOptimizedClearValue = {};
-	depthOptimizedClearValue.Format = DXGI_FORMAT_D32_FLOAT;
-	depthOptimizedClearValue.DepthStencil.Depth = 1.0f;
-	depthOptimizedClearValue.DepthStencil.Stencil = 0;
+	cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc.Format = diffuseTex->GetDesc().Format;
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvDesc.Texture2D.MostDetailedMip = 0;
+	srvDesc.Texture2D.MipLevels = -1;
+	d3dDevice->CreateShaderResourceView(diffuseTex.Get(), &srvDesc, cbvSrvUavHeapHandle);
 
-	CD3DX12_HEAP_PROPERTIES heapProperties2 = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-	CD3DX12_RESOURCE_DESC tex2D = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_D32_FLOAT, mClientWidth, mClientHeight, 1, 0, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL);
-
-	ThrowIfFailed(d3dDevice->CreateCommittedResource(
-		&heapProperties2,
-		D3D12_HEAP_FLAG_NONE,
-		&tex2D,
-		D3D12_RESOURCE_STATE_DEPTH_WRITE,
-		&depthOptimizedClearValue,
-		IID_PPV_ARGS(&depthStencilBuffer)));
-
-	d3dDevice->CreateDepthStencilView(depthStencilBuffer.Get(), &depthStencilDesc, dsvHeap->GetCPUDescriptorHandleForHeapStart());
+	cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
+	srvDesc.Format = normalTex->GetDesc().Format;
+	d3dDevice->CreateShaderResourceView(normalTex.Get(), &srvDesc, cbvSrvUavHeapHandle);
 }
 
 void DxApp::CreateSynObject()
@@ -647,19 +682,24 @@ bool DxApp::InitDirectx12()
 {
 	//枚举适配器
 	EnumAdapter();
+	CreateCommandObjects();
 	//创建交换链
 	CreateSwapChain();
-	//创建渲染目标视图和常量缓冲视图
-	CreateRtvAndCbvAndDsv();
+	//创建渲染目标视图和深度模板视图的描述符堆
+	CreateRtvAndDsvDescriptorHeap();
+	//创建深度模板视图
+	CreateDepthStencil();
+	//加载纹理
+	LoadTexture();
 	//创建根签名
 	CreateRootSignature();
+
+	CreateCbvSrvUavDescriptor();
+	//创建顶点和索引缓冲
+	CreateVertexAndIndexBuffer();
+
 	//创建渲染管线
 	CreatePipelineState();
-	//创建顶点和索引缓冲
-	CreateVertexBuffer();
-	//创建常量缓冲
-	CreateConstantBuffer();
-	CreateDepthStencil();
 	//创建同步对象
 	CreateSynObject();
 

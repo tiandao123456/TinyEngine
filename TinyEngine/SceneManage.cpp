@@ -20,15 +20,31 @@ const staticMeshActor SceneManage::GetStaticMeshActorData(std::string actorName)
 			for (auto j = 0; j < keyValue.size();)
 			{
 				//直接读取三个数
-				float x = keyValue[j++].asDouble();
-				float y = keyValue[j++].asDouble();
-				float z = keyValue[j++].asDouble();
-				if(colorChoose == 0)
-					staticMeshData.vertices.push_back({ DirectX::XMFLOAT3(x, y, z),DirectX::XMFLOAT4(1.0f,0.0f,0.0f,0.0f) });
-				else if(colorChoose == 1)
-					staticMeshData.vertices.push_back({ DirectX::XMFLOAT3(x, y, z),DirectX::XMFLOAT4(0.0f,1.0f,0.0f,0.0f) });
+				float positionX = keyValue[j++].asDouble();
+				float positionY = keyValue[j++].asDouble();
+				float positionZ = keyValue[j++].asDouble();
+
+				float normalX = keyValue[j++].asDouble();
+				float normalY = keyValue[j++].asDouble();
+				float normalZ = keyValue[j++].asDouble();
+
+				float textureU = keyValue[j++].asDouble();
+				float textureV = keyValue[j++].asDouble();
+				if (colorChoose == 0)
+					staticMeshData.vertices.push_back({ DirectX::XMFLOAT3(positionX, positionY, positionZ),
+														DirectX::XMFLOAT3(normalX,normalY, normalZ),
+														DirectX::XMFLOAT2(textureU,textureV),
+														DirectX::XMFLOAT3(1.0f,0.0f,0.0f) });
+				else if (colorChoose == 1)
+					staticMeshData.vertices.push_back({ DirectX::XMFLOAT3(positionX, positionY, positionZ),
+														DirectX::XMFLOAT3(normalX,normalY, normalZ),
+														DirectX::XMFLOAT2(textureU,textureV),
+														DirectX::XMFLOAT3(0.0f,1.0f,0.0f) });
 				else
-					staticMeshData.vertices.push_back({ DirectX::XMFLOAT3(x, y, z),DirectX::XMFLOAT4(0.0f,0.0f,1.0f,0.0f) });
+					staticMeshData.vertices.push_back({ DirectX::XMFLOAT3(positionX, positionY, positionZ),
+														DirectX::XMFLOAT3(normalX,normalY, normalZ),
+														DirectX::XMFLOAT2(textureU,textureV),
+														DirectX::XMFLOAT3(0.0f,0.0f,1.0f) });
 			}
 			//索引数据
 			keyValue = temp["indices"];

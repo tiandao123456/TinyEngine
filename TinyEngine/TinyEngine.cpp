@@ -15,12 +15,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE prevInstance,
 	TEngine tEngine;
 	tEngine.Init();
 	tEngine.Run();
-	 
-	//DxApp instance;
-	//instance.Init();
 
-	////窗口的主循环
-	//instance.Run();
 	//执行初始化Windows的逻辑
 	//下述同理
 #endif

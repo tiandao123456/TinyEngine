@@ -12,7 +12,7 @@
 #include "d3dx12.h"
 #include "DxHelper.h"
 #include "include/json/json.h"
-
+#include "DDSTextureLoader.h"
 
 #include <string>
 #include <wrl.h>

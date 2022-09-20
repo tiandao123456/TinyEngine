@@ -4,7 +4,9 @@
 struct Vertex
 {
 	DirectX::XMFLOAT3 position;
-	DirectX::XMFLOAT4 color;
+	DirectX::XMFLOAT3 normal;
+	DirectX::XMFLOAT2 uv;
+	DirectX::XMFLOAT3 color;
 };
 
 struct cameraInfo

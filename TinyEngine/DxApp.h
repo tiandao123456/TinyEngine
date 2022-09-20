@@ -2,6 +2,8 @@
 
 #include "DxHelper.h"
 #include "SceneManage.h"
+#include "d3dUtil.h"
+#include <unordered_map>
 #include <d3d12.h>
 
 #pragma comment(lib,"d3dcompiler.lib")
@@ -18,8 +20,10 @@ public:
 private:
 	struct Vertex
 	{
-		XMFLOAT3 position;
-		XMFLOAT4 color;
+		DirectX::XMFLOAT3 position;
+		DirectX::XMFLOAT3 normal;
+		DirectX::XMFLOAT2 uv;
+		DirectX::XMFLOAT3 color;
 	};
 	
 	struct ObjectConstant
@@ -44,7 +48,7 @@ private:
 
 	ComPtr<ID3D12Resource> renderTargets[swapChainBufferCount];
 	ComPtr<ID3D12DescriptorHeap> rtvHeap = nullptr;
-	ComPtr<ID3D12DescriptorHeap> cbvHeap = nullptr;
+	ComPtr<ID3D12DescriptorHeap> cbvSrvUavHeap = nullptr;
 	ComPtr<ID3D12DescriptorHeap> dsvHeap = nullptr;
 	UINT rtvDescriptorSize;
 
@@ -56,7 +60,7 @@ private:
 
 	ComPtr<ID3D12Resource> constantBuffer;
 	std::unique_ptr<UploadHeapConstantBuffer<ObjectConstant>> objectConstantBuffer;
-	CD3DX12_CPU_DESCRIPTOR_HANDLE cbvHeapHandle;
+	CD3DX12_CPU_DESCRIPTOR_HANDLE cbvSrvUavHeapHandle;
 	ComPtr<ID3D12Resource> depthStencilBuffer;
 
 	UINT frameIndex;
@@ -80,6 +84,7 @@ private:
 	std::vector<std::uint16_t> allIndices;
 	bool isRunning = true;
 
+	std::unordered_map<std::string, std::unique_ptr<Texture>> textures;
 private:
 	////使用getApp获取static指针
 	//static DxApp* getApp()
@@ -89,11 +94,12 @@ private:
 	void EnumAdapter();
 	void CreateCommandObjects();
 	void CreateSwapChain();
-	void CreateRtvAndCbvAndDsv();
+	void CreateRtvAndDsvDescriptorHeap();
+	void LoadTexture();
 	void CreateRootSignature();
 	void CreatePipelineState();
-	void CreateVertexBuffer();
-	void CreateConstantBuffer();
+	void CreateVertexAndIndexBuffer();
+	void CreateCbvSrvUavDescriptor();
 	void CreateDepthStencil();
 	void CreateSynObject();
 	void WaitForPreviousFrame();
