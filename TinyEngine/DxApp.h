@@ -30,6 +30,16 @@ private:
 	{
 		XMFLOAT4X4 worldViewProjMatrix;
 	};
+
+	struct MaterialConstant
+	{
+		// 散射光反射率
+		DirectX::XMFLOAT4 diffuseAlbedo;
+		// 菲涅耳R0参数
+		DirectX::XMFLOAT3 fresnelR0;
+		// 粗糙度
+		float roughness;
+	};
 	
 	bool useWarpDevice;
 	float aspectRatio;
@@ -58,8 +68,8 @@ private:
 	CD3DX12_VIEWPORT viewport;
 	CD3DX12_RECT scissorRect;
 
-	ComPtr<ID3D12Resource> constantBuffer;
 	std::unique_ptr<UploadHeapConstantBuffer<ObjectConstant>> objectConstantBuffer;
+	std::unique_ptr<UploadHeapConstantBuffer<MaterialConstant>> materialConstantBuffer;
 	CD3DX12_CPU_DESCRIPTOR_HANDLE cbvSrvUavHeapHandle;
 	ComPtr<ID3D12Resource> depthStencilBuffer;
 

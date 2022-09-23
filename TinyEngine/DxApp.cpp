@@ -97,16 +97,31 @@ void DxApp::PopulateCommandList()
 	commandList->IASetIndexBuffer(&indexBufferView);
 
 	CD3DX12_GPU_DESCRIPTOR_HANDLE handle(cbvSrvUavHeap->GetGPUDescriptorHandleForHeapStart());
+	CD3DX12_GPU_DESCRIPTOR_HANDLE handleTemp = handle;
+	for (auto i = 0; i < TEngine::staticMeshDatas.size(); i++)
+		handleTemp.Offset(cbvSrvUavDescriptorSize);
+	commandList->SetGraphicsRootDescriptorTable(1, handleTemp);
+
+	handleTemp.Offset(cbvSrvUavDescriptorSize);
 	for (auto i = 0; i < TEngine::staticMeshDatas.size(); i++)
 	{
 		handle.Offset(cbvSrvUavDescriptorSize * i);
-		// 第一个参数表示绑定的槽位号，都绑定在寄存器b0上，但是有两个const buffer所以需要偏移
+		//第一个参数表示根签名中的数组下标，0表示为根签名的第一个元素
+		//根签名中的第一个元素对应着多个CBV所以需要偏移
 		commandList->SetGraphicsRootDescriptorTable(0, handle);
-		if (i==0)
+		if (i == 0)
+		{
+			commandList->SetGraphicsRootDescriptorTable(2, handleTemp);
 			// 绘制一个实例，第一个参数为索引数量
 			commandList->DrawIndexedInstanced((UINT)staticMeshIndicesNums[0], 1, 0, 0, 0);
+		}
 		else
-			commandList->DrawIndexedInstanced((UINT)staticMeshIndicesNums[i], 1, (UINT)staticMeshIndicesNums[i-1], TEngine::staticMeshDatas[i-1].vertices.size(), 0);
+		{
+			handleTemp.Offset(cbvSrvUavDescriptorSize);
+			handleTemp.Offset(cbvSrvUavDescriptorSize);
+			commandList->SetGraphicsRootDescriptorTable(2, handleTemp);
+			commandList->DrawIndexedInstanced((UINT)staticMeshIndicesNums[i], 1, (UINT)staticMeshIndicesNums[i - 1], TEngine::staticMeshDatas[i - 1].vertices.size(), 0);
+		}
 	}
 	auto y = CD3DX12_RESOURCE_BARRIER::Transition(renderTargets[frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
 	// 表明后台缓冲现在将被呈现
@@ -261,11 +276,11 @@ void DxApp::CreateDepthStencil()
 	depthOptimizedClearValue.DepthStencil.Depth = 1.0f;
 	depthOptimizedClearValue.DepthStencil.Stencil = 0;
 
-	CD3DX12_HEAP_PROPERTIES heapProperties2 = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+	CD3DX12_HEAP_PROPERTIES heapProperties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
 	CD3DX12_RESOURCE_DESC tex2D = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_D32_FLOAT, mClientWidth, mClientHeight, 1, 0, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL);
 
 	ThrowIfFailed(d3dDevice->CreateCommittedResource(
-		&heapProperties2,
+		&heapProperties,
 		D3D12_HEAP_FLAG_NONE,
 		&tex2D,
 		D3D12_RESOURCE_STATE_DEPTH_WRITE,
@@ -278,23 +293,39 @@ void DxApp::CreateDepthStencil()
 void DxApp::LoadTexture()
 {
 	//从文件夹中读取两个dds文件
-	auto diffuseTex = std::make_unique<Texture>();
-	diffuseTex->Name = "diffuseTex";
-	diffuseTex->Filename = L"./Resources/bricks.dds";
+	auto diffuseTex1 = std::make_unique<Texture>();
+	diffuseTex1->Name = "diffuseTex1";
+	diffuseTex1->Filename = L"./Resources/bricks.dds";
 	ThrowIfFailed(DirectX::CreateDDSTextureFromFile12(d3dDevice.Get(),
-		commandList.Get(), diffuseTex->Filename.c_str(),
-		diffuseTex->Resource, diffuseTex->UploadHeap));
+		commandList.Get(), diffuseTex1->Filename.c_str(),
+		diffuseTex1->Resource, diffuseTex1->UploadHeap));
 
-	auto normalTex = std::make_unique<Texture>();
-	normalTex->Name = "normalTex";
-	normalTex->Filename = L"./Resources/bricks_nmap.dds";
+	auto normalTex1 = std::make_unique<Texture>();
+	normalTex1->Name = "normalTex1";
+	normalTex1->Filename = L"./Resources/bricks_nmap.dds";
 	ThrowIfFailed(DirectX::CreateDDSTextureFromFile12(d3dDevice.Get(),
-		commandList.Get(), normalTex->Filename.c_str(),
-		normalTex->Resource, normalTex->UploadHeap));
+		commandList.Get(), normalTex1->Filename.c_str(),
+		normalTex1->Resource, normalTex1->UploadHeap));
+
+	auto diffuseTex2 = std::make_unique<Texture>();
+	diffuseTex2->Name = "diffuseTex2";
+	diffuseTex2->Filename = L"./Resources/tile.dds";
+	ThrowIfFailed(DirectX::CreateDDSTextureFromFile12(d3dDevice.Get(),
+		commandList.Get(), diffuseTex2->Filename.c_str(),
+		diffuseTex2->Resource, diffuseTex2->UploadHeap));
+
+	auto normalTex2 = std::make_unique<Texture>();
+	normalTex2->Name = "normalTex2";
+	normalTex2->Filename = L"./Resources/tile_nmap.dds";
+	ThrowIfFailed(DirectX::CreateDDSTextureFromFile12(d3dDevice.Get(),
+		commandList.Get(), normalTex2->Filename.c_str(),
+		normalTex2->Resource, normalTex2->UploadHeap));
 
 	//键值对保存，name对应uni_ptr
-	textures[diffuseTex->Name] = std::move(diffuseTex);
-	textures[normalTex->Name] = std::move(normalTex);
+	textures[diffuseTex1->Name] = std::move(diffuseTex1);
+	textures[normalTex1->Name] = std::move(normalTex1);
+	textures[diffuseTex2->Name] = std::move(diffuseTex2);
+	textures[normalTex2->Name] = std::move(normalTex2);
 }
 
 //描述符表与描述符堆的关系：描述符表实际上是描述符堆的子范围
@@ -308,21 +339,21 @@ void DxApp::CreateRootSignature()
 	featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
 
 	if (FAILED(d3dDevice->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData))))
-	{
 		featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
-	}
 
 	//有两个texture、一个const buffer
-	CD3DX12_DESCRIPTOR_RANGE1 descRange[2];
+	//是对范围的描述，而constantBufferView并不是范围
+	CD3DX12_DESCRIPTOR_RANGE1 ranges[3];
+	//绑定两个CBV到寄存器b0上
+	ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 2, 0);
+	ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 2);
+	//绑定两个SRV分别到寄存器t0、t1上面
+	ranges[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 4, 0);
 
-	//一个CBV，绑定到以b0为起点的descriptor table上
-	descRange[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, TEngine::staticMeshDatas.size(), 0);
-	//总共有两个SRV，绑定到以t0为起点的descriptor table上
-	descRange[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0);
-
-	CD3DX12_ROOT_PARAMETER1 rootParameters[1];
-	//第一个参数表示为描述符区域的数量，有CBV与SRV两个区域
-	rootParameters[0].InitAsDescriptorTable(2, &descRange[0], D3D12_SHADER_VISIBILITY_ALL);
+	CD3DX12_ROOT_PARAMETER1 rootParameters[3];
+	rootParameters[0].InitAsDescriptorTable(1, &ranges[0], D3D12_SHADER_VISIBILITY_VERTEX);
+	rootParameters[1].InitAsDescriptorTable(1, &ranges[1], D3D12_SHADER_VISIBILITY_ALL);
+	rootParameters[2].InitAsDescriptorTable(1, &ranges[2], D3D12_SHADER_VISIBILITY_PIXEL);
 
 	//采样器描述
 	D3D12_STATIC_SAMPLER_DESC sampler = {};
@@ -600,14 +631,15 @@ void DxApp::CreateCbvSrvUavDescriptor()
 	// and that descriptors contained in it can be referenced by a root table.
 	// NumDescripters为1的含义为该常量缓冲视图描述符堆能够绑定到渲染管线上
 	D3D12_DESCRIPTOR_HEAP_DESC cbvSrvUavHeapDesc;
-	// 描述符堆中的CBV、SRV、UAV总数，2个SRV与一个CBV
-	cbvSrvUavHeapDesc.NumDescriptors = TEngine::staticMeshDatas.size() + 2;
+	// 描述符堆中的CBV、SRV、UAV总数，2个SRV与多个CBV（包含一个材质CBV）
+	cbvSrvUavHeapDesc.NumDescriptors = TEngine::staticMeshDatas.size() + 4 + 1;
 	cbvSrvUavHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	cbvSrvUavHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	cbvSrvUavHeapDesc.NodeMask = 0;
 	ThrowIfFailed(d3dDevice->CreateDescriptorHeap(&cbvSrvUavHeapDesc, IID_PPV_ARGS(&cbvSrvUavHeap)));
 
 	objectConstantBuffer = std::make_unique<UploadHeapConstantBuffer<ObjectConstant>>(d3dDevice.Get(), TEngine::staticMeshDatas.size());
+	materialConstantBuffer = std::make_unique<UploadHeapConstantBuffer<MaterialConstant>>(d3dDevice.Get(), 1);
 	cbvSrvUavDescriptorSize = d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	cbvSrvUavHeapHandle = cbvSrvUavHeap->GetCPUDescriptorHandleForHeapStart();
 	objectConstantBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvSrvUavHeapHandle, 0);
@@ -616,21 +648,46 @@ void DxApp::CreateCbvSrvUavDescriptor()
 		cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
 		objectConstantBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvSrvUavHeapHandle, i);
 	}
-	auto diffuseTex = textures["diffuseTex"]->Resource;
-	auto normalTex = textures["normalTex"]->Resource;
+
+	cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
+	//第三个参数表示在一个uploadBuffer中的偏移大小，此处无偏移
+	materialConstantBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvSrvUavHeapHandle, 0);
+	MaterialConstant matConstant;
+	matConstant.diffuseAlbedo = { 1.0f, 1.0f, 1.0f, 1.0f };
+	matConstant.fresnelR0 = { 0.01f, 0.01f, 0.01f };
+	matConstant.roughness = 0.25f;
+	materialConstantBuffer->CopyData(0, matConstant);
+
+	auto diffuseTex1 = textures["diffuseTex1"]->Resource;
+	auto normalTex1 = textures["normalTex1"]->Resource;
+	auto diffuseTex2 = textures["diffuseTex2"]->Resource;
+	auto normalTex2 = textures["normalTex2"]->Resource;
 
 	cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc.Format = diffuseTex->GetDesc().Format;
+	srvDesc.Format = diffuseTex1->GetDesc().Format;
 	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	srvDesc.Texture2D.MostDetailedMip = 0;
 	srvDesc.Texture2D.MipLevels = -1;
-	d3dDevice->CreateShaderResourceView(diffuseTex.Get(), &srvDesc, cbvSrvUavHeapHandle);
+	d3dDevice->CreateShaderResourceView(diffuseTex1.Get(), &srvDesc, cbvSrvUavHeapHandle);
 
 	cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
-	srvDesc.Format = normalTex->GetDesc().Format;
-	d3dDevice->CreateShaderResourceView(normalTex.Get(), &srvDesc, cbvSrvUavHeapHandle);
+	srvDesc.Format = normalTex1->GetDesc().Format;
+	d3dDevice->CreateShaderResourceView(normalTex1.Get(), &srvDesc, cbvSrvUavHeapHandle);
+
+	cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc1 = {};
+	srvDesc1.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc1.Format = diffuseTex2->GetDesc().Format;
+	srvDesc1.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvDesc1.Texture2D.MostDetailedMip = 0;
+	srvDesc1.Texture2D.MipLevels = -1;
+	d3dDevice->CreateShaderResourceView(diffuseTex2.Get(), &srvDesc1, cbvSrvUavHeapHandle);
+
+	cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
+	srvDesc.Format = normalTex2->GetDesc().Format;
+	d3dDevice->CreateShaderResourceView(normalTex2.Get(), &srvDesc, cbvSrvUavHeapHandle);
 }
 
 void DxApp::CreateSynObject()

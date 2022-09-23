@@ -8,15 +8,25 @@
 // PURPOSE, MERCHANTABILITY, OR NON-INFRINGEMENT.
 //
 //*********************************************************
+
 Texture2D diffuseMap : register(t0);
 Texture2D normalMap : register(t1);
 
-SamplerState gsamLinear : register(s0);
-
-cbuffer cbPerObject : register(b0)
+cbuffer cbWorldViewProj : register(b0)
 {
 	float4x4 worldViewProj;
 };
+
+cbuffer cbMaterial: register(b2)
+{
+	// 散射光反射率
+	float4 diffuseAlbedo;
+	// 菲涅耳R0参数
+	float3 fresnelR0;
+	// 粗糙度
+	float roughness;
+};
+SamplerState gsamLinear : register(s0);
 
 struct VertexIn
 {
@@ -53,10 +63,10 @@ float4 PS(VertexOut pin) : SV_Target
 	float4 ambientColor = float4(0.1, 0.0, 0.0, 1.0);
 
 	float4 diffuseAlbedo = diffuseMap.Sample(gsamLinear, pin.uv);
-	float4 pixelNormal = normalMap.Sample(gsamLinear, pin.uv);
+	float4 pixelNorma = normalMap.Sample(gsamLinear, pin.uv);
 
 	lightDirection = normalize(lightDirection);
-	float dotNormalLight = max(dot(float3(pixelNormal.x, pixelNormal.y, pixelNormal.z), lightDirection), 0.0f);
+	float dotNormalLight = max(dot(float3(pixelNorma.x, pixelNorma.y, pixelNorma.z), lightDirection), 0.0f);
 	float4 diffuseColor = dotNormalLight * lightColor * diffuseAlbedo;
 
 	return diffuseColor + ambientColor;

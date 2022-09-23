@@ -1,4 +1,5 @@
 #pragma once
+#include <conio.h>
 #include <wrl.h>
 #include <d3d12.h>
 #include "..\d3dx12.h"
@@ -23,6 +24,9 @@ public:
         // 如果是constant buffer，则每个元素（每个constant buffer）的大小与 256byte 对齐
         if (isConstantBuffer)
             elementByteSize = (sizeof(T) + 255) & ~255;
+
+		//AllocConsole();
+		//_cprintf("%d ", isConstantBuffer);
 
         auto uploadHeap = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
         auto descSize = CD3DX12_RESOURCE_DESC::Buffer(elementByteSize * elementCount);
