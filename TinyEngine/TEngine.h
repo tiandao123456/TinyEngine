@@ -24,6 +24,7 @@ public:
 	static std::vector<staticMeshActor> staticMeshDatas;
 	static cameraInfo cameraData;
 	static std::vector<std::vector<float>> modelMatrixDatas;
+	static lightInfo lightInfoData;
 public:
 	void Init();
 	void Run();

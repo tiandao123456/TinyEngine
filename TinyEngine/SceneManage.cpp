@@ -97,3 +97,24 @@ const cameraInfo SceneManage::GetCameraActorData(std::string actorName)
 
 	return cameraData;
 }
+
+const lightInfo SceneManage::GetLightInfo()
+{
+	lightInfo lightInfoData;
+	std::ifstream strJsonContent(filePath, std::ios::binary);
+	//负责读取Json文件
+	reader.parse(strJsonContent, value);
+	Json::Value lightInfoDataArray = value["lightInfo"];
+
+	lightInfoData.location.push_back(lightInfoDataArray["location"]["x"].asInt());
+	lightInfoData.location.push_back(lightInfoDataArray["location"]["y"].asInt());
+	lightInfoData.location.push_back(lightInfoDataArray["location"]["z"].asInt());
+
+	lightInfoData.direction.push_back(lightInfoDataArray["direction"]["x"].asDouble());
+	lightInfoData.direction.push_back(lightInfoDataArray["direction"]["y"].asDouble());
+	lightInfoData.direction.push_back(lightInfoDataArray["direction"]["z"].asDouble());
+
+	lightInfoData.intensity = lightInfoDataArray["intensity"].asDouble();
+
+	return lightInfoData;
+}

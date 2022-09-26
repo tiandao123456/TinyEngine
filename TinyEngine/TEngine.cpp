@@ -5,6 +5,7 @@
 std::vector<staticMeshActor> TEngine::staticMeshDatas = {};
 cameraInfo TEngine::cameraData = {};
 std::vector<std::vector<float>> TEngine::modelMatrixDatas = {};
+lightInfo TEngine::lightInfoData = {};
 HWND TEngine::mhMainWnd = nullptr;
 
 //回调函数,有鼠标或键盘消息就触发
@@ -103,23 +104,15 @@ void TEngine::GetSceneDatas()
 	//staticMeshDatas.push_back(sceneManage.GetStaticMeshActorData("Shape_Cone"));
 	staticMeshDatas.push_back(sceneManage.GetStaticMeshActorData("SM_Chair"));
 	staticMeshDatas.push_back(sceneManage.GetStaticMeshActorData("S_Modular_Building_Window_ve0icepdw_lod3_Var1"));
-}
-void TEngine::GameTick()
-{
-	////在每个GameTick更新相机的数据
-	////在GameTick中切换相机实现动态效果
-	//if (cameraSwitchFlag)
-	//{
-	//	cameraData = sceneManage.GetCameraActorData("CameraActor_2");
-	//	--cameraSwitchFlag;
-	//}
-	//else
-	//{
-		cameraData = sceneManage.GetCameraActorData("CameraActor_2");
-	//	++cameraSwitchFlag;
-	//}
-	//更新物体的modelMatrix信息
+	cameraData = sceneManage.GetCameraActorData("CameraActor_2");
+	lightInfoData = sceneManage.GetLightInfo();
 	modelMatrixDatas.clear();
 	for (auto i = 0; i < staticMeshDatas.size(); i++)
 		modelMatrixDatas.push_back(staticMeshDatas[i].modelMatrix);
+}
+void TEngine::GameTick()
+{
+	//在此处可以更新相机的位置
+
+	//以及更新光源的位置
 }

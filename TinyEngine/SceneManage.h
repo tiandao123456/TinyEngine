@@ -24,6 +24,13 @@ struct staticMeshActor
 	int indiceNum;
 };
 
+struct lightInfo
+{
+	std::vector<float> location;
+	std::vector<float> direction;
+	float intensity;
+};
+
 class SceneManage
 {
 private:
@@ -40,5 +47,7 @@ public:
 
 	//Ïà»úµÄview¾ØÕó
 	const cameraInfo GetCameraActorData(std::string cameraName);
+
+	const lightInfo GetLightInfo();
 };
 
