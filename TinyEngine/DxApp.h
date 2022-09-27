@@ -26,9 +26,14 @@ private:
 		DirectX::XMFLOAT3 color;
 	};
 	
-	struct ObjectConstant
+	struct WorldMatrix
 	{
-		XMFLOAT4X4 worldViewProjMatrix;
+		XMFLOAT4X4 worldMatrix;
+	};
+
+	struct ViewProjMatrix
+	{
+		XMFLOAT4X4 viewProjMatrix;
 	};
 
 	struct MaterialConstant
@@ -68,7 +73,8 @@ private:
 	CD3DX12_VIEWPORT viewport;
 	CD3DX12_RECT scissorRect;
 
-	std::unique_ptr<UploadHeapConstantBuffer<ObjectConstant>> objectConstantBuffer;
+	std::unique_ptr<UploadHeapConstantBuffer<WorldMatrix>> worldMatrixConstantBuffer;
+	std::unique_ptr<UploadHeapConstantBuffer<ViewProjMatrix>> viewProjConstantBuffer;
 	std::unique_ptr<UploadHeapConstantBuffer<MaterialConstant>> materialConstantBuffer;
 	CD3DX12_CPU_DESCRIPTOR_HANDLE cbvSrvUavHeapHandle;
 	ComPtr<ID3D12Resource> depthStencilBuffer;
@@ -95,6 +101,7 @@ private:
 	bool isRunning = true;
 
 	std::unordered_map<std::string, std::unique_ptr<Texture>> textures;
+	XMMATRIX viewProjMatrixParam;
 private:
 	////使用getApp获取static指针
 	//static DxApp* getApp()
@@ -114,6 +121,7 @@ private:
 	void CreateSynObject();
 	void WaitForPreviousFrame();
 	void PopulateCommandList();
+	void CalculateViewProj();
 
 	void OnRender();
 	void OnUpdate();

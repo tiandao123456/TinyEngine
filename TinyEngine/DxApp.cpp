@@ -19,16 +19,9 @@ void DxApp::OnRender()
 	WaitForPreviousFrame();
 }
 
-//更新worldViewProj矩阵
+//更新world矩阵
 void DxApp::OnUpdate()
 {
-	XMVECTOR pos = XMVectorSet(TEngine::cameraData.location[0], TEngine::cameraData.location[1], TEngine::cameraData.location[2], 1.0f);
-	XMVECTOR target = XMVectorSet(TEngine::cameraData.target[0], TEngine::cameraData.target[1], TEngine::cameraData.target[2], 1.0f);
-	XMVECTOR up = XMVectorSet(0.0, 0.0f, 1.0f, 0.0f);
-
-	XMMATRIX view = XMMatrixLookAtLH(pos, target, up);
-	XMStoreFloat4x4(&mView, view);
-
 	int position = 0;
 	for(auto i=0;i<TEngine::modelMatrixDatas.size();i++)
 	{
@@ -39,28 +32,16 @@ void DxApp::OnUpdate()
 			TEngine::modelMatrixDatas[i][8],TEngine::modelMatrixDatas[i][9],TEngine::modelMatrixDatas[i][10],TEngine::modelMatrixDatas[i][11],
 			TEngine::modelMatrixDatas[i][12],TEngine::modelMatrixDatas[i][13],TEngine::modelMatrixDatas[i][14],TEngine::modelMatrixDatas[i][15]
 		};
-		XMMATRIX p = XMMatrixPerspectiveFovLH(0.25f * Pi, aspectRatio, 1.0f, 1000.0f);
-		XMStoreFloat4x4(&mProj, p);
-		XMMATRIX proj = XMLoadFloat4x4(&mProj);
 
-		XMMATRIX worldViewProj = world * view * proj;
-
-		ObjectConstant objConstants;
-		XMStoreFloat4x4(&objConstants.worldViewProjMatrix, XMMatrixTranspose(worldViewProj));
-		objectConstantBuffer->CopyData(position++, objConstants);
+		WorldMatrix worldMatrixConst;
+		XMStoreFloat4x4(&worldMatrixConst.worldMatrix, XMMatrixTranspose(world));
+		worldMatrixConstantBuffer->CopyData(position++, worldMatrixConst);
 	}
 }
 
 void DxApp::PopulateCommandList()
 {
-	// Command list allocators can only be reset when the associated 
-	// command lists have finished execution on the GPU; apps should use 
-	// fences to determine GPU execution progress.
 	ThrowIfFailed(commandAllocator->Reset());
-
-	// However, when ExecuteCommandList() is called on a particular command 
-	// list, that command list can then be reset at any time and must be before 
-	// re-recording.
 	ThrowIfFailed(commandList->Reset(commandAllocator.Get(), pipelineState.Get()));
 
 	// 设置根签名，描述符堆以及描述符表
@@ -98,9 +79,13 @@ void DxApp::PopulateCommandList()
 
 	CD3DX12_GPU_DESCRIPTOR_HANDLE handle(cbvSrvUavHeap->GetGPUDescriptorHandleForHeapStart());
 	CD3DX12_GPU_DESCRIPTOR_HANDLE handleTemp = handle;
+	//第二个根参数为材质结构体
 	for (auto i = 0; i < TEngine::staticMeshDatas.size(); i++)
 		handleTemp.Offset(cbvSrvUavDescriptorSize);
 	commandList->SetGraphicsRootDescriptorTable(1, handleTemp);
+	//第三个根参数为viewProj矩阵
+	handleTemp.Offset(cbvSrvUavDescriptorSize);
+	commandList->SetGraphicsRootDescriptorTable(2, handleTemp);
 
 	handleTemp.Offset(cbvSrvUavDescriptorSize);
 	for (auto i = 0; i < TEngine::staticMeshDatas.size(); i++)
@@ -111,7 +96,7 @@ void DxApp::PopulateCommandList()
 		commandList->SetGraphicsRootDescriptorTable(0, handle);
 		if (i == 0)
 		{
-			commandList->SetGraphicsRootDescriptorTable(2, handleTemp);
+			commandList->SetGraphicsRootDescriptorTable(3, handleTemp);
 			// 绘制一个实例，第一个参数为索引数量
 			commandList->DrawIndexedInstanced((UINT)staticMeshIndicesNums[0], 1, 0, 0, 0);
 		}
@@ -119,7 +104,7 @@ void DxApp::PopulateCommandList()
 		{
 			handleTemp.Offset(cbvSrvUavDescriptorSize);
 			handleTemp.Offset(cbvSrvUavDescriptorSize);
-			commandList->SetGraphicsRootDescriptorTable(2, handleTemp);
+			commandList->SetGraphicsRootDescriptorTable(3, handleTemp);
 			commandList->DrawIndexedInstanced((UINT)staticMeshIndicesNums[i], 1, (UINT)staticMeshIndicesNums[i - 1], TEngine::staticMeshDatas[i - 1].vertices.size(), 0);
 		}
 	}
@@ -343,17 +328,19 @@ void DxApp::CreateRootSignature()
 
 	//有两个texture、一个const buffer
 	//是对范围的描述，而constantBufferView并不是范围
-	CD3DX12_DESCRIPTOR_RANGE1 ranges[3];
-	//绑定两个CBV到寄存器b0上
+	CD3DX12_DESCRIPTOR_RANGE1 ranges[4];
+	//绑定两个CBV到寄存器b0,b1上
 	ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 2, 0);
 	ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 2);
+	ranges[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 3);
 	//绑定两个SRV分别到寄存器t0、t1上面
-	ranges[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 4, 0);
+	ranges[3].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 4, 0);
 
-	CD3DX12_ROOT_PARAMETER1 rootParameters[3];
-	rootParameters[0].InitAsDescriptorTable(1, &ranges[0], D3D12_SHADER_VISIBILITY_VERTEX);
+	CD3DX12_ROOT_PARAMETER1 rootParameters[4];
+	rootParameters[0].InitAsDescriptorTable(1, &ranges[0], D3D12_SHADER_VISIBILITY_ALL);
 	rootParameters[1].InitAsDescriptorTable(1, &ranges[1], D3D12_SHADER_VISIBILITY_ALL);
-	rootParameters[2].InitAsDescriptorTable(1, &ranges[2], D3D12_SHADER_VISIBILITY_PIXEL);
+	rootParameters[2].InitAsDescriptorTable(1, &ranges[2], D3D12_SHADER_VISIBILITY_ALL);
+	rootParameters[3].InitAsDescriptorTable(1, &ranges[3], D3D12_SHADER_VISIBILITY_ALL);
 
 	//采样器描述
 	D3D12_STATIC_SAMPLER_DESC sampler = {};
@@ -623,6 +610,22 @@ void DxApp::CreateVertexAndIndexBuffer()
 	commandQueue->ExecuteCommandLists(_countof(cmdsLists), cmdsLists);
 }
 
+void DxApp::CalculateViewProj()
+{
+	XMVECTOR pos = XMVectorSet(TEngine::cameraData.location[0], TEngine::cameraData.location[1], TEngine::cameraData.location[2], 1.0f);
+	XMVECTOR target = XMVectorSet(TEngine::cameraData.target[0], TEngine::cameraData.target[1], TEngine::cameraData.target[2], 1.0f);
+	XMVECTOR up = XMVectorSet(0.0, 0.0f, 1.0f, 0.0f);
+
+	XMMATRIX view = XMMatrixLookAtLH(pos, target, up);
+	XMStoreFloat4x4(&mView, view);
+
+	XMMATRIX p = XMMatrixPerspectiveFovLH(0.25f * Pi, aspectRatio, 1.0f, 1000.0f);
+	XMStoreFloat4x4(&mProj, p);
+	XMMATRIX proj = XMLoadFloat4x4(&mProj);
+
+	viewProjMatrixParam = view * proj;
+}
+
 //先建堆再建描述符
 void DxApp::CreateCbvSrvUavDescriptor()
 {
@@ -632,21 +635,22 @@ void DxApp::CreateCbvSrvUavDescriptor()
 	// NumDescripters为1的含义为该常量缓冲视图描述符堆能够绑定到渲染管线上
 	D3D12_DESCRIPTOR_HEAP_DESC cbvSrvUavHeapDesc;
 	// 描述符堆中的CBV、SRV、UAV总数，2个SRV与多个CBV（包含一个材质CBV）
-	cbvSrvUavHeapDesc.NumDescriptors = TEngine::staticMeshDatas.size() + 4 + 1;
+	cbvSrvUavHeapDesc.NumDescriptors = TEngine::staticMeshDatas.size() + 6;
 	cbvSrvUavHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	cbvSrvUavHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	cbvSrvUavHeapDesc.NodeMask = 0;
 	ThrowIfFailed(d3dDevice->CreateDescriptorHeap(&cbvSrvUavHeapDesc, IID_PPV_ARGS(&cbvSrvUavHeap)));
 
-	objectConstantBuffer = std::make_unique<UploadHeapConstantBuffer<ObjectConstant>>(d3dDevice.Get(), TEngine::staticMeshDatas.size());
+	worldMatrixConstantBuffer = std::make_unique<UploadHeapConstantBuffer<WorldMatrix>>(d3dDevice.Get(), TEngine::staticMeshDatas.size());
 	materialConstantBuffer = std::make_unique<UploadHeapConstantBuffer<MaterialConstant>>(d3dDevice.Get(), 1);
+	viewProjConstantBuffer = std::make_unique<UploadHeapConstantBuffer<ViewProjMatrix>>(d3dDevice.Get(), 1);
 	cbvSrvUavDescriptorSize = d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	cbvSrvUavHeapHandle = cbvSrvUavHeap->GetCPUDescriptorHandleForHeapStart();
-	objectConstantBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvSrvUavHeapHandle, 0);
+	worldMatrixConstantBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvSrvUavHeapHandle, 0);
 	for (auto i = 1; i < TEngine::staticMeshDatas.size(); i++)
 	{
 		cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
-		objectConstantBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvSrvUavHeapHandle, i);
+		worldMatrixConstantBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvSrvUavHeapHandle, i);
 	}
 
 	cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
@@ -657,6 +661,13 @@ void DxApp::CreateCbvSrvUavDescriptor()
 	matConstant.fresnelR0 = { 0.01f, 0.01f, 0.01f };
 	matConstant.roughness = 0.25f;
 	materialConstantBuffer->CopyData(0, matConstant);
+
+	cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
+	viewProjConstantBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvSrvUavHeapHandle, 0);
+	CalculateViewProj();
+	ViewProjMatrix viewProjMatrixData;
+	XMStoreFloat4x4(&viewProjMatrixData.viewProjMatrix, XMMatrixTranspose(viewProjMatrixParam));
+	viewProjConstantBuffer->CopyData(0, viewProjMatrixData);
 
 	auto diffuseTex1 = textures["diffuseTex1"]->Resource;
 	auto normalTex1 = textures["normalTex1"]->Resource;
