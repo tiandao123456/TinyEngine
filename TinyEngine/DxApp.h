@@ -1,6 +1,6 @@
 #pragma once
 
-#include "DxHelper.h"
+#include "Common/DxHelper.h"
 #include "SceneManage.h"
 #include "d3dUtil.h"
 #include <unordered_map>
@@ -31,7 +31,7 @@ private:
 		XMFLOAT4X4 worldMatrix;
 	};
 
-	struct ViewProjMatrix
+	struct ConstMatrix
 	{
 		XMFLOAT4X4 viewProjMatrix;
 	};
@@ -74,7 +74,7 @@ private:
 	CD3DX12_RECT scissorRect;
 
 	std::unique_ptr<UploadHeapConstantBuffer<WorldMatrix>> worldMatrixConstantBuffer;
-	std::unique_ptr<UploadHeapConstantBuffer<ViewProjMatrix>> viewProjConstantBuffer;
+	std::unique_ptr<UploadHeapConstantBuffer<ConstMatrix>> ConstantBuffer;
 	std::unique_ptr<UploadHeapConstantBuffer<MaterialConstant>> materialConstantBuffer;
 	CD3DX12_CPU_DESCRIPTOR_HANDLE cbvSrvUavHeapHandle;
 	ComPtr<ID3D12Resource> depthStencilBuffer;

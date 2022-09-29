@@ -13,6 +13,9 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Common">
+      <UniqueIdentifier>{4f1c2299-5290-4fa5-a30e-769de28cb2da}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="stdafx.h">
@@ -22,15 +25,6 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="DxHelper.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="d3dx12.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="Common\UploadHeapBuffer.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="Common\UploadHeapConstantBuffer.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="SceneManage.h">
@@ -45,12 +39,24 @@
     <ClInclude Include="DDSTextureLoader.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="d3dx12.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Common\UploadHeapBuffer.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Common\UploadHeapConstantBuffer.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Common\DxHelper.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Common\d3d12.h">
+      <Filter>Common</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="TinyEngine.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="stdafx.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="DxApp.cpp">

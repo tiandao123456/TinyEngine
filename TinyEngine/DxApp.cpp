@@ -643,7 +643,7 @@ void DxApp::CreateCbvSrvUavDescriptor()
 
 	worldMatrixConstantBuffer = std::make_unique<UploadHeapConstantBuffer<WorldMatrix>>(d3dDevice.Get(), TEngine::staticMeshDatas.size());
 	materialConstantBuffer = std::make_unique<UploadHeapConstantBuffer<MaterialConstant>>(d3dDevice.Get(), 1);
-	viewProjConstantBuffer = std::make_unique<UploadHeapConstantBuffer<ViewProjMatrix>>(d3dDevice.Get(), 1);
+	ConstantBuffer = std::make_unique<UploadHeapConstantBuffer<ConstMatrix>>(d3dDevice.Get(), 1);
 	cbvSrvUavDescriptorSize = d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	cbvSrvUavHeapHandle = cbvSrvUavHeap->GetCPUDescriptorHandleForHeapStart();
 	worldMatrixConstantBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvSrvUavHeapHandle, 0);
@@ -663,11 +663,11 @@ void DxApp::CreateCbvSrvUavDescriptor()
 	materialConstantBuffer->CopyData(0, matConstant);
 
 	cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
-	viewProjConstantBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvSrvUavHeapHandle, 0);
+	ConstantBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvSrvUavHeapHandle, 0);
 	CalculateViewProj();
-	ViewProjMatrix viewProjMatrixData;
+	ConstMatrix viewProjMatrixData;
 	XMStoreFloat4x4(&viewProjMatrixData.viewProjMatrix, XMMatrixTranspose(viewProjMatrixParam));
-	viewProjConstantBuffer->CopyData(0, viewProjMatrixData);
+	ConstantBuffer->CopyData(0, viewProjMatrixData);
 
 	auto diffuseTex1 = textures["diffuseTex1"]->Resource;
 	auto normalTex1 = textures["normalTex1"]->Resource;

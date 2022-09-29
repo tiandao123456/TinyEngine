@@ -143,6 +143,8 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="Common\d3d12.h" />
+    <ClInclude Include="Common\DxHelper.h" />
     <ClInclude Include="Common\UploadHeapBuffer.h" />
     <ClInclude Include="Common\UploadHeapConstantBuffer.h" />
     <ClInclude Include="d3dUtil.h" />
@@ -158,9 +160,6 @@
     <ClCompile Include="d3dUtil.cpp" />
     <ClCompile Include="DDSTextureLoader.cpp" />
     <ClCompile Include="SceneManage.cpp" />
-    <ClCompile Include="stdafx.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
-    </ClCompile>
     <ClCompile Include="TEngine.cpp" />
     <ClCompile Include="TinyEngine.cpp" />
     <ClCompile Include="DxApp.cpp" />
