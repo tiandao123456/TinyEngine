@@ -25,6 +25,7 @@ public:
 	static cameraInfo cameraData;
 	static std::vector<std::vector<float>> modelMatrixDatas;
 	static lightInfo lightInfoData;
+	static XMMATRIX shadowTransform;
 public:
 	void Init();
 	void Run();

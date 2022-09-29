@@ -39,6 +39,67 @@ void DxApp::OnUpdate()
 	}
 }
 
+void DxApp::DrawSceneToShadow()
+{
+	CD3DX12_GPU_DESCRIPTOR_HANDLE handle(cbvSrvUavHeap->GetGPUDescriptorHandleForHeapStart());
+	CD3DX12_GPU_DESCRIPTOR_HANDLE handleTemp = handle;
+	CD3DX12_GPU_DESCRIPTOR_HANDLE handleTempAgain = handle;
+	for (auto i = 0; i < TEngine::staticMeshDatas.size() + 6; i++)
+		handleTempAgain.Offset(cbvSrvUavDescriptorSize);
+	commandList->SetGraphicsRootDescriptorTable(4, handleTempAgain);
+
+	auto viewParam = shadowMap->Viewport();
+	auto scissorRectParam = shadowMap->ScissorRect();
+	commandList->RSSetViewports(1, &viewParam);
+	commandList->RSSetScissorRects(1, &scissorRectParam);
+
+	// Change to DEPTH_WRITE.
+	auto x = CD3DX12_RESOURCE_BARRIER::Transition(shadowMap->Resource(),
+		D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+
+	commandList->ResourceBarrier(1, &x);
+
+	// Clear the back buffer and depth buffer.
+	commandList->ClearDepthStencilView(shadowMap->Dsv(),
+		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
+
+	// Set null render target because we are only going to draw to
+	// depth buffer.  Setting a null render target will disable color writes.
+	// Note the active PSO also must specify a render target count of 0.
+	auto shadowDsv = shadowMap->Dsv();
+	commandList->OMSetRenderTargets(0, nullptr, false, &shadowDsv);
+
+	for (auto i = 0; i < TEngine::staticMeshDatas.size(); i++)
+		handleTemp.Offset(cbvSrvUavDescriptorSize);
+	handleTemp.Offset(cbvSrvUavDescriptorSize);
+	commandList->SetGraphicsRootDescriptorTable(2, handleTemp);
+
+	commandList->SetPipelineState(shadowPipelineState.Get());
+
+	for (auto i = 0; i < TEngine::staticMeshDatas.size(); i++)
+	{
+		handle.Offset(cbvSrvUavDescriptorSize * i);
+		//第一个参数表示根签名中的数组下标，0表示为根签名的第一个元素
+		//根签名中的第一个元素对应着多个CBV所以需要偏移
+		commandList->SetGraphicsRootDescriptorTable(0, handle);
+		if (i == 0)
+		{
+			// 绘制一个实例，第一个参数为索引数量
+			commandList->DrawIndexedInstanced((UINT)staticMeshIndicesNums[0], 1, 0, 0, 0);
+		}
+		else
+		{
+			commandList->DrawIndexedInstanced((UINT)staticMeshIndicesNums[i], 1, (UINT)staticMeshIndicesNums[i - 1], TEngine::staticMeshDatas[i - 1].vertices.size(), 0);
+		}
+	}
+
+	// Change back to GENERIC_READ so we can read the texture in a shader.
+
+	auto y = CD3DX12_RESOURCE_BARRIER::Transition(shadowMap->Resource(),
+		D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_GENERIC_READ);
+	commandList->ResourceBarrier(1, &y);
+}
+
 void DxApp::PopulateCommandList()
 {
 	ThrowIfFailed(commandAllocator->Reset());
@@ -46,6 +107,10 @@ void DxApp::PopulateCommandList()
 
 	// 设置根签名，描述符堆以及描述符表
 	commandList->SetGraphicsRootSignature(rootSignature.Get());
+	ID3D12DescriptorHeap* ppHeaps[] = { cbvSrvUavHeap.Get() };
+	commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
+
+	DrawSceneToShadow();
 
 	//绑定视口到渲染管线的光栅化阶段
 	commandList->RSSetViewports(1, &viewport);
@@ -69,10 +134,6 @@ void DxApp::PopulateCommandList()
 	// 当资源变成只读状态时，表明某些ALU可以进行对资源进行操作了，只写同理
 	commandList->ResourceBarrier(1, &x);
 
-	ID3D12DescriptorHeap* ppHeaps[] = { cbvSrvUavHeap.Get() };
-	commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
-	commandList->SetGraphicsRootSignature(rootSignature.Get());
-
 	commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
 	commandList->IASetIndexBuffer(&indexBufferView);
@@ -83,10 +144,17 @@ void DxApp::PopulateCommandList()
 	for (auto i = 0; i < TEngine::staticMeshDatas.size(); i++)
 		handleTemp.Offset(cbvSrvUavDescriptorSize);
 	commandList->SetGraphicsRootDescriptorTable(1, handleTemp);
-	//第三个根参数为viewProj矩阵
+	////第三个根参数为viewProj矩阵
+	//handleTemp.Offset(cbvSrvUavDescriptorSize);
+	//commandList->SetGraphicsRootDescriptorTable(2, handleTemp);
+	//CD3DX12_GPU_DESCRIPTOR_HANDLE handleTempAgain = handleTemp;
+	//handleTempAgain.Offset(cbvSrvUavDescriptorSize);
+	//for (auto i = 0; i < 4; i++)
+	//{
+	//	handleTempAgain.Offset(cbvSrvUavDescriptorSize);
+	//}
+	//commandList->SetGraphicsRootDescriptorTable(4, handleTempAgain);
 	handleTemp.Offset(cbvSrvUavDescriptorSize);
-	commandList->SetGraphicsRootDescriptorTable(2, handleTemp);
-
 	handleTemp.Offset(cbvSrvUavDescriptorSize);
 	for (auto i = 0; i < TEngine::staticMeshDatas.size(); i++)
 	{
@@ -242,7 +310,7 @@ void DxApp::CreateRtvAndDsvDescriptorHeap()
 	}
 	//创建深度模板堆
 	D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
-	dsvHeapDesc.NumDescriptors = 1;
+	dsvHeapDesc.NumDescriptors = 2;
 	dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
 	dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 	ThrowIfFailed(d3dDevice->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&dsvHeap)));
@@ -328,19 +396,21 @@ void DxApp::CreateRootSignature()
 
 	//有两个texture、一个const buffer
 	//是对范围的描述，而constantBufferView并不是范围
-	CD3DX12_DESCRIPTOR_RANGE1 ranges[4];
+	CD3DX12_DESCRIPTOR_RANGE1 ranges[5];
 	//绑定两个CBV到寄存器b0,b1上
 	ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 2, 0);
 	ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 2);
 	ranges[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 3);
 	//绑定两个SRV分别到寄存器t0、t1上面
 	ranges[3].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 4, 0);
+	ranges[4].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 4);
 
-	CD3DX12_ROOT_PARAMETER1 rootParameters[4];
+	CD3DX12_ROOT_PARAMETER1 rootParameters[5];
 	rootParameters[0].InitAsDescriptorTable(1, &ranges[0], D3D12_SHADER_VISIBILITY_ALL);
 	rootParameters[1].InitAsDescriptorTable(1, &ranges[1], D3D12_SHADER_VISIBILITY_ALL);
 	rootParameters[2].InitAsDescriptorTable(1, &ranges[2], D3D12_SHADER_VISIBILITY_ALL);
 	rootParameters[3].InitAsDescriptorTable(1, &ranges[3], D3D12_SHADER_VISIBILITY_ALL);
+	rootParameters[4].InitAsDescriptorTable(1, &ranges[4], D3D12_SHADER_VISIBILITY_ALL);
 
 	//采样器描述
 	D3D12_STATIC_SAMPLER_DESC sampler = {};
@@ -369,20 +439,12 @@ void DxApp::CreateRootSignature()
 
 void DxApp::CreatePipelineState()
 {
-	// Create the pipeline state, which includes compiling and loading shaders.
-	ComPtr<ID3DBlob> vertexShader;
-	ComPtr<ID3DBlob> pixelShader;
+	//第三个参数设置能够包含别的hlsl文件
+	shaders["shadowVS"] = d3dUtil::CompileShader(L"Shaders\\shadow.hlsl", nullptr, "VS", "vs_5_1");
+	shaders["shadowPS"] = d3dUtil::CompileShader(L"Shaders\\shadow.hlsl", nullptr, "PS", "ps_5_1");
 
-#if defined(_DEBUG)
-	// Enable better shader debugging with the graphics debugging tools.
-	UINT compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
-#else
-	UINT compileFlags = 0;
-#endif
-
-	//实时编译着色器
-	ThrowIfFailed(D3DCompileFromFile(L"Shaders\\color.hlsl", nullptr, nullptr, "VS", "vs_5_0", compileFlags, 0, &vertexShader, nullptr));
-	ThrowIfFailed(D3DCompileFromFile(L"Shaders\\color.hlsl", nullptr, nullptr, "PS", "ps_5_0", compileFlags, 0, &pixelShader, nullptr));
+	shaders["objectVS"] = d3dUtil::CompileShader(L"Shaders\\object.hlsl", nullptr, "VS", "vs_5_1");
+	shaders["objectPS"] = d3dUtil::CompileShader(L"Shaders\\object.hlsl", nullptr, "PS", "ps_5_1");
 
 	//定义顶点的输入布局
 	D3D12_INPUT_ELEMENT_DESC inputElementDescs[] =
@@ -398,8 +460,16 @@ void DxApp::CreatePipelineState()
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
 	psoDesc.InputLayout = { inputElementDescs, _countof(inputElementDescs) };
 	psoDesc.pRootSignature = rootSignature.Get();
-	psoDesc.VS = CD3DX12_SHADER_BYTECODE(vertexShader.Get());
-	psoDesc.PS = CD3DX12_SHADER_BYTECODE(pixelShader.Get());
+	psoDesc.VS =
+	{
+		reinterpret_cast<BYTE*>(shaders["shadowVS"]->GetBufferPointer()),
+		shaders["shadowVS"]->GetBufferSize()
+	};
+	psoDesc.PS =
+	{
+		reinterpret_cast<BYTE*>(shaders["shadowPS"]->GetBufferPointer()),
+		shaders["shadowPS"]->GetBufferSize()
+	};
 	psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 
 	//描述混和状态
@@ -413,6 +483,42 @@ void DxApp::CreatePipelineState()
 	//描述资源的多重采样，此处设置为1即不进行多重采样
 	psoDesc.SampleDesc.Count = 1;
 	ThrowIfFailed(d3dDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pipelineState)));
+
+	//
+	// PSO for shadowmap.
+	//
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC smapPsoDesc;
+	ZeroMemory(&smapPsoDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
+	smapPsoDesc.InputLayout = { inputElementDescs, _countof(inputElementDescs) };
+	smapPsoDesc.pRootSignature = rootSignature.Get();
+	smapPsoDesc.VS =
+	{
+		reinterpret_cast<BYTE*>(shaders["objectVS"]->GetBufferPointer()),
+		shaders["objectVS"]->GetBufferSize()
+	};
+	smapPsoDesc.PS =
+	{
+		reinterpret_cast<BYTE*>(shaders["objectPS"]->GetBufferPointer()),
+		shaders["objectPS"]->GetBufferSize()
+	};
+	smapPsoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+	smapPsoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+	smapPsoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+	smapPsoDesc.SampleMask = UINT_MAX;
+	smapPsoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+	smapPsoDesc.NumRenderTargets = 1;
+	smapPsoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+	smapPsoDesc.SampleDesc.Count = 1;
+	smapPsoDesc.SampleDesc.Quality = 0;
+	smapPsoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+	smapPsoDesc.RasterizerState.DepthBias = 100000;
+	smapPsoDesc.RasterizerState.DepthBiasClamp = 0.0f;
+	smapPsoDesc.RasterizerState.SlopeScaledDepthBias = 1.0f;
+	smapPsoDesc.pRootSignature = rootSignature.Get();
+	// Shadow map pass does not have a render target.
+	smapPsoDesc.RTVFormats[0] = DXGI_FORMAT_UNKNOWN;
+	smapPsoDesc.NumRenderTargets = 0;
+	ThrowIfFailed(d3dDevice->CreateGraphicsPipelineState(&smapPsoDesc, IID_PPV_ARGS(&shadowPipelineState)));
 
 	// Command lists are created in the recording state, but there is nothing
 	// to record yet. The main loop expects it to be closed, so close it now.
@@ -635,7 +741,7 @@ void DxApp::CreateCbvSrvUavDescriptor()
 	// NumDescripters为1的含义为该常量缓冲视图描述符堆能够绑定到渲染管线上
 	D3D12_DESCRIPTOR_HEAP_DESC cbvSrvUavHeapDesc;
 	// 描述符堆中的CBV、SRV、UAV总数，2个SRV与多个CBV（包含一个材质CBV）
-	cbvSrvUavHeapDesc.NumDescriptors = TEngine::staticMeshDatas.size() + 6;
+	cbvSrvUavHeapDesc.NumDescriptors = TEngine::staticMeshDatas.size() + 7;
 	cbvSrvUavHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	cbvSrvUavHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	cbvSrvUavHeapDesc.NodeMask = 0;
@@ -665,8 +771,25 @@ void DxApp::CreateCbvSrvUavDescriptor()
 	cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
 	ConstantBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvSrvUavHeapHandle, 0);
 	CalculateViewProj();
+	//TEngine::shadowTransform =
+	//{
+	//	0.01273, -0.01423, 0.02012, 0.00,
+	//	0.00, -0.02265, -0.01601, 0.00,
+	//	-0.02464, -0.00735, 0.01039,
+	//	0.00,0.50, 0.50, 0.50, 1.00
+	//};
+
+	TEngine::shadowTransform=
+	{ 
+		0.03438, 0.02513, 0.01777, 0.00,
+		0.00, 0.04529, -0.01601, 0.00,
+		-0.04353, 0.01985, 0.01404, 0.00,
+		0.00, -5.29003E-08, 0.50, 1.00
+	};
+
 	ConstMatrix viewProjMatrixData;
 	XMStoreFloat4x4(&viewProjMatrixData.viewProjMatrix, XMMatrixTranspose(viewProjMatrixParam));
+	XMStoreFloat4x4(&viewProjMatrixData.shadowTransform, XMMatrixTranspose(TEngine::shadowTransform));
 	ConstantBuffer->CopyData(0, viewProjMatrixData);
 
 	auto diffuseTex1 = textures["diffuseTex1"]->Resource;
@@ -699,6 +822,18 @@ void DxApp::CreateCbvSrvUavDescriptor()
 	cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
 	srvDesc.Format = normalTex2->GetDesc().Format;
 	d3dDevice->CreateShaderResourceView(normalTex2.Get(), &srvDesc, cbvSrvUavHeapHandle);
+
+	auto srvCpuStart = cbvSrvUavHeap->GetCPUDescriptorHandleForHeapStart();
+	auto srvGpuStart = cbvSrvUavHeap->GetGPUDescriptorHandleForHeapStart();
+	auto dsvCpuStart = dsvHeap->GetCPUDescriptorHandleForHeapStart();
+
+	UINT shadowMapHeapIndex = TEngine::staticMeshDatas.size() + 6;
+	UINT dsvDescriptorSize = d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+
+	shadowMap->BuildDescriptors(
+		CD3DX12_CPU_DESCRIPTOR_HANDLE(srvCpuStart, shadowMapHeapIndex, cbvSrvUavDescriptorSize),
+		CD3DX12_GPU_DESCRIPTOR_HANDLE(srvGpuStart, shadowMapHeapIndex, cbvSrvUavDescriptorSize),
+		CD3DX12_CPU_DESCRIPTOR_HANDLE(dsvCpuStart, 1, dsvDescriptorSize));
 }
 
 void DxApp::CreateSynObject()
@@ -753,6 +888,10 @@ bool DxApp::InitDirectx12()
 	CreateCommandObjects();
 	//创建交换链
 	CreateSwapChain();
+
+	shadowMap = std::make_unique<ShadowMap>(
+		d3dDevice.Get(), 2048, 2048);
+
 	//创建渲染目标视图和深度模板视图的描述符堆
 	CreateRtvAndDsvDescriptorHeap();
 	//创建深度模板视图

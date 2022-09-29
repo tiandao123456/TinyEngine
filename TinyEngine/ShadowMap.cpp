@@ -2,6 +2,7 @@
 // ShadowMap.cpp by Frank Luna (C) 2011 All Rights Reserved.
 //***************************************************************************************
 
+#include "stdafx.h"
 #include "ShadowMap.h"
  
 ShadowMap::ShadowMap(ID3D12Device* device, UINT width, UINT height)
@@ -29,7 +30,7 @@ UINT ShadowMap::Height()const
 
 ID3D12Resource*  ShadowMap::Resource()
 {
-	return mShadowMap.Get();
+	return shadowMapResource.Get();
 }
 
 CD3DX12_GPU_DESCRIPTOR_HANDLE ShadowMap::Srv()const
@@ -81,7 +82,7 @@ void ShadowMap::OnResize(UINT newWidth, UINT newHeight)
  
 void ShadowMap::BuildDescriptors()
 {
-	//该srv负责对生成的深度图采样
+	// 该srv负责对生成的深度图采样
     // Create SRV to resource so we can sample the shadow map in a shader program.
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
@@ -91,7 +92,7 @@ void ShadowMap::BuildDescriptors()
 	srvDesc.Texture2D.MipLevels = 1;
 	srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
     srvDesc.Texture2D.PlaneSlice = 0;
-    md3dDevice->CreateShaderResourceView(mShadowMap.Get(), &srvDesc, mhCpuSrv);
+    md3dDevice->CreateShaderResourceView(shadowMapResource.Get(), &srvDesc, mhCpuSrv);
 
 	// shadow map渲染到dsv上
 	// Create DSV to resource so we can render to the shadow map.
@@ -100,7 +101,7 @@ void ShadowMap::BuildDescriptors()
     dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
     dsvDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
     dsvDesc.Texture2D.MipSlice = 0;
-	md3dDevice->CreateDepthStencilView(mShadowMap.Get(), &dsvDesc, mhCpuDsv);
+	md3dDevice->CreateDepthStencilView(shadowMapResource.Get(), &dsvDesc, mhCpuDsv);
 }
 
 void ShadowMap::BuildResource()
@@ -124,11 +125,13 @@ void ShadowMap::BuildResource()
     optClear.DepthStencil.Depth = 1.0f;
     optClear.DepthStencil.Stencil = 0;
 
+	auto x = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+
 	ThrowIfFailed(md3dDevice->CreateCommittedResource(
-		&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+		&x,
 		D3D12_HEAP_FLAG_NONE,
 		&texDesc,
         D3D12_RESOURCE_STATE_GENERIC_READ,
 		&optClear,
-		IID_PPV_ARGS(&mShadowMap)));
+		IID_PPV_ARGS(&shadowMapResource)));
 }

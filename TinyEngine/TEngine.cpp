@@ -6,6 +6,7 @@ std::vector<staticMeshActor> TEngine::staticMeshDatas = {};
 cameraInfo TEngine::cameraData = {};
 std::vector<std::vector<float>> TEngine::modelMatrixDatas = {};
 lightInfo TEngine::lightInfoData = {};
+XMMATRIX TEngine::shadowTransform = {};
 HWND TEngine::mhMainWnd = nullptr;
 
 //回调函数,有鼠标或键盘消息就触发

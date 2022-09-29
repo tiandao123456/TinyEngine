@@ -8,10 +8,11 @@
 // PURPOSE, MERCHANTABILITY, OR NON-INFRINGEMENT.
 //
 //*********************************************************
-
+//
 //法线贴图和纹理贴图
 Texture2D diffuseMap : register(t0);
 Texture2D normalMap : register(t1);
+Texture2D shadowMap : register(t4);
 
 //mvp矩阵，实际上vp矩阵可以固定，在每个
 //update中只传输model矩阵(将顶点从本地坐标系
@@ -34,55 +35,14 @@ cbuffer cbMaterial: register(b2)
 
 cbuffer cbViewProj: register(b3)
 {
-	float4x4 viewProj;
-}
+    float4x4 viewProj;
+	float4x4 shadowTransform;
+};
 
 //采样器
 SamplerState gsamLinear : register(s0);
 
-struct VertexIn
-{
-	float3 pos   : POSITION;
-	float3 normal: NORMAL;
-	float2 uv    : TEXCOORD;
-	float3 color : COLOR;
-};
 
-struct VertexOut
-{
-	float4 pos   : SV_POSITION;
-	float3 normal: NORMAL;
-	float2 uv    : TEXCOORD;
-	float4 color : COLOR;
-};
-
-VertexOut VS(VertexIn vin)
-{
-	VertexOut vout;
-
-	vout.pos = mul(mul(float4(vin.pos, 1.0f), world), viewProj);
-	vout.color = float4(vin.color, 1.0f);
-	vout.normal = vin.normal;
-	vout.uv = vin.uv;
-
-	return vout;
-}
-
-float4 PS(VertexOut pin) : SV_Target
-{
-	float3 lightDirection = float3(1.0, 1.0, 1.0);
-	float4 lightColor = float4(1.0, 1.0, 1.0, 1.0);
-	float4 ambientColor = float4(0.1, 0.0, 0.0, 1.0);
-
-	float4 diffuseAlbedo = diffuseMap.Sample(gsamLinear, pin.uv);
-	float4 pixelNorma = normalMap.Sample(gsamLinear, pin.uv);
-
-	lightDirection = normalize(lightDirection);
-	float dotNormalLight = max(dot(float3(pixelNorma.x, pixelNorma.y, pixelNorma.z), lightDirection), 0.0f);
-	float4 diffuseColor = dotNormalLight * lightColor * diffuseAlbedo;
-
-	return diffuseColor + ambientColor;
-}
 
 
 

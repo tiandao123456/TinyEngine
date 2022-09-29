@@ -152,6 +152,7 @@
     <ClInclude Include="DDSTextureLoader.h" />
     <ClInclude Include="DxHelper.h" />
     <ClInclude Include="SceneManage.h" />
+    <ClInclude Include="ShadowMap.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="DxApp.h" />
     <ClInclude Include="TEngine.h" />
@@ -160,6 +161,7 @@
     <ClCompile Include="d3dUtil.cpp" />
     <ClCompile Include="DDSTextureLoader.cpp" />
     <ClCompile Include="SceneManage.cpp" />
+    <ClCompile Include="ShadowMap.cpp" />
     <ClCompile Include="TEngine.cpp" />
     <ClCompile Include="TinyEngine.cpp" />
     <ClCompile Include="DxApp.cpp" />

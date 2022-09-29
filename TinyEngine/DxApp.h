@@ -3,6 +3,7 @@
 #include "Common/DxHelper.h"
 #include "SceneManage.h"
 #include "d3dUtil.h"
+#include "ShadowMap.h"
 #include <unordered_map>
 #include <d3d12.h>
 
@@ -34,6 +35,7 @@ private:
 	struct ConstMatrix
 	{
 		XMFLOAT4X4 viewProjMatrix;
+		XMFLOAT4X4 shadowTransform;
 	};
 
 	struct MaterialConstant
@@ -58,6 +60,7 @@ private:
 	ComPtr<ID3D12CommandAllocator> commandAllocator = nullptr;
 	ComPtr<ID3D12GraphicsCommandList> commandList = nullptr;
 	ComPtr<ID3D12PipelineState> pipelineState = nullptr;
+	ComPtr<ID3D12PipelineState> shadowPipelineState = nullptr;
 
 	ComPtr<IDXGISwapChain3> dxgiSwapChain = nullptr;
 
@@ -102,6 +105,9 @@ private:
 
 	std::unordered_map<std::string, std::unique_ptr<Texture>> textures;
 	XMMATRIX viewProjMatrixParam;
+
+	std::unique_ptr<ShadowMap> shadowMap;
+	std::unordered_map<std::string, ComPtr<ID3DBlob>> shaders;
 private:
 	////使用getApp获取static指针
 	//static DxApp* getApp()
@@ -122,6 +128,7 @@ private:
 	void WaitForPreviousFrame();
 	void PopulateCommandList();
 	void CalculateViewProj();
+	void DrawSceneToShadow();
 
 	void OnRender();
 	void OnUpdate();
