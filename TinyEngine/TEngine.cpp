@@ -103,7 +103,8 @@ void TEngine::Run()
 void TEngine::GetSceneDatas()
 {
 	staticMeshDatas.push_back(sceneManage.GetStaticMeshActorData("SM_Chair"));
-	staticMeshDatas.push_back(sceneManage.GetStaticMeshActorData("S_Modular_Building_Window_ve0icepdw_lod3_Var1"));
+	staticMeshDatas.push_back(sceneManage.GetStaticMeshActorData("Cube"));
+	//staticMeshDatas.push_back(sceneManage.GetStaticMeshActorData("S_Modular_Building_Window_ve0icepdw_lod3_Var1"));
 	cameraData = sceneManage.GetCameraActorData("CameraActor_2");
 	lightInfoData = sceneManage.GetLightInfo();
 	modelMatrixDatas.clear();

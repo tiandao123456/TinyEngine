@@ -37,6 +37,7 @@ cbuffer cbViewProj: register(b3)
 {
     float4x4 viewProj;
 	float4x4 shadowTransform;
+	float4x4 shadowMatrix;
 };
 
 //²ÉÑùÆ÷

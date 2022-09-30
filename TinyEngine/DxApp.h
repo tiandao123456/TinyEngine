@@ -36,6 +36,7 @@ private:
 	{
 		XMFLOAT4X4 viewProjMatrix;
 		XMFLOAT4X4 shadowTransform;
+		XMFLOAT4X4 shadowMatirx;
 	};
 
 	struct MaterialConstant
@@ -105,6 +106,7 @@ private:
 
 	std::unordered_map<std::string, std::unique_ptr<Texture>> textures;
 	XMMATRIX viewProjMatrixParam;
+	XMMATRIX shadowMatrixParam;
 
 	std::unique_ptr<ShadowMap> shadowMap;
 	std::unordered_map<std::string, ComPtr<ID3DBlob>> shaders;
@@ -128,6 +130,7 @@ private:
 	void WaitForPreviousFrame();
 	void PopulateCommandList();
 	void CalculateViewProj();
+	void CalculateShadowTransform();
 	void DrawSceneToShadow();
 
 	void OnRender();

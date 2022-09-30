@@ -41,6 +41,11 @@ void DxApp::OnUpdate()
 
 void DxApp::DrawSceneToShadow()
 {
+	// 设置根签名，描述符堆以及描述符表
+	commandList->SetGraphicsRootSignature(rootSignature.Get());
+	ID3D12DescriptorHeap* ppHeaps[] = { cbvSrvUavHeap.Get() };
+	commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
+
 	CD3DX12_GPU_DESCRIPTOR_HANDLE handle(cbvSrvUavHeap->GetGPUDescriptorHandleForHeapStart());
 	CD3DX12_GPU_DESCRIPTOR_HANDLE handleTemp = handle;
 	CD3DX12_GPU_DESCRIPTOR_HANDLE handleTempAgain = handle;
@@ -69,12 +74,15 @@ void DxApp::DrawSceneToShadow()
 	auto shadowDsv = shadowMap->Dsv();
 	commandList->OMSetRenderTargets(0, nullptr, false, &shadowDsv);
 
+	commandList->SetPipelineState(shadowPipelineState.Get());
+	commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
+	commandList->IASetIndexBuffer(&indexBufferView);
+
 	for (auto i = 0; i < TEngine::staticMeshDatas.size(); i++)
 		handleTemp.Offset(cbvSrvUavDescriptorSize);
 	handleTemp.Offset(cbvSrvUavDescriptorSize);
 	commandList->SetGraphicsRootDescriptorTable(2, handleTemp);
-
-	commandList->SetPipelineState(shadowPipelineState.Get());
 
 	for (auto i = 0; i < TEngine::staticMeshDatas.size(); i++)
 	{
@@ -104,12 +112,7 @@ void DxApp::PopulateCommandList()
 {
 	ThrowIfFailed(commandAllocator->Reset());
 	ThrowIfFailed(commandList->Reset(commandAllocator.Get(), pipelineState.Get()));
-
-	// 设置根签名，描述符堆以及描述符表
-	commandList->SetGraphicsRootSignature(rootSignature.Get());
-	ID3D12DescriptorHeap* ppHeaps[] = { cbvSrvUavHeap.Get() };
-	commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
-
+	
 	DrawSceneToShadow();
 
 	//绑定视口到渲染管线的光栅化阶段
@@ -138,15 +141,21 @@ void DxApp::PopulateCommandList()
 	commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
 	commandList->IASetIndexBuffer(&indexBufferView);
 
+	commandList->SetPipelineState(pipelineState.Get());
+
+	// 设置根签名，描述符堆以及描述符表
+	commandList->SetGraphicsRootSignature(rootSignature.Get());
+	ID3D12DescriptorHeap* ppHeaps[] = { cbvSrvUavHeap.Get() };
+	commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
 	CD3DX12_GPU_DESCRIPTOR_HANDLE handle(cbvSrvUavHeap->GetGPUDescriptorHandleForHeapStart());
 	CD3DX12_GPU_DESCRIPTOR_HANDLE handleTemp = handle;
 	//第二个根参数为材质结构体
 	for (auto i = 0; i < TEngine::staticMeshDatas.size(); i++)
 		handleTemp.Offset(cbvSrvUavDescriptorSize);
 	commandList->SetGraphicsRootDescriptorTable(1, handleTemp);
-	////第三个根参数为viewProj矩阵
-	//handleTemp.Offset(cbvSrvUavDescriptorSize);
-	//commandList->SetGraphicsRootDescriptorTable(2, handleTemp);
+	//第三个根参数为两个固定的矩阵
+	handleTemp.Offset(cbvSrvUavDescriptorSize);
+	commandList->SetGraphicsRootDescriptorTable(2, handleTemp);
 	//CD3DX12_GPU_DESCRIPTOR_HANDLE handleTempAgain = handleTemp;
 	//handleTempAgain.Offset(cbvSrvUavDescriptorSize);
 	//for (auto i = 0; i < 4; i++)
@@ -154,7 +163,7 @@ void DxApp::PopulateCommandList()
 	//	handleTempAgain.Offset(cbvSrvUavDescriptorSize);
 	//}
 	//commandList->SetGraphicsRootDescriptorTable(4, handleTempAgain);
-	handleTemp.Offset(cbvSrvUavDescriptorSize);
+	//再进行一次偏移来到第四个参数
 	handleTemp.Offset(cbvSrvUavDescriptorSize);
 	for (auto i = 0; i < TEngine::staticMeshDatas.size(); i++)
 	{
@@ -462,13 +471,13 @@ void DxApp::CreatePipelineState()
 	psoDesc.pRootSignature = rootSignature.Get();
 	psoDesc.VS =
 	{
-		reinterpret_cast<BYTE*>(shaders["shadowVS"]->GetBufferPointer()),
-		shaders["shadowVS"]->GetBufferSize()
+		reinterpret_cast<BYTE*>(shaders["objectVS"]->GetBufferPointer()),
+		shaders["objectVS"]->GetBufferSize()
 	};
 	psoDesc.PS =
 	{
-		reinterpret_cast<BYTE*>(shaders["shadowPS"]->GetBufferPointer()),
-		shaders["shadowPS"]->GetBufferSize()
+		reinterpret_cast<BYTE*>(shaders["objectPS"]->GetBufferPointer()),
+		shaders["objectPS"]->GetBufferSize()
 	};
 	psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 
@@ -493,13 +502,13 @@ void DxApp::CreatePipelineState()
 	smapPsoDesc.pRootSignature = rootSignature.Get();
 	smapPsoDesc.VS =
 	{
-		reinterpret_cast<BYTE*>(shaders["objectVS"]->GetBufferPointer()),
-		shaders["objectVS"]->GetBufferSize()
+		reinterpret_cast<BYTE*>(shaders["shadowVS"]->GetBufferPointer()),
+		shaders["shadowVS"]->GetBufferSize()
 	};
 	smapPsoDesc.PS =
 	{
-		reinterpret_cast<BYTE*>(shaders["objectPS"]->GetBufferPointer()),
-		shaders["objectPS"]->GetBufferSize()
+		reinterpret_cast<BYTE*>(shaders["shadowPS"]->GetBufferPointer()),
+		shaders["shadowPS"]->GetBufferSize()
 	};
 	smapPsoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 	smapPsoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
@@ -732,6 +741,40 @@ void DxApp::CalculateViewProj()
 	viewProjMatrixParam = view * proj;
 }
 
+//之后写到game tick里面进行实时更新实现动态阴影
+void DxApp::CalculateShadowTransform()
+{
+	XMFLOAT3 center = XMFLOAT3(0.0, 0.0, 0.0);
+	XMFLOAT3 pos = XMFLOAT3(TEngine::lightInfoData.location[0],TEngine::lightInfoData.location[1],TEngine::lightInfoData.location[2]);
+	XMVECTOR lightPos = XMLoadFloat3(&pos);
+	XMVECTOR targetPos = XMLoadFloat3(&center);
+	XMVECTOR lightUp = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+	XMMATRIX lightView = XMMatrixLookAtLH(lightPos, targetPos, lightUp);
+
+	// Transform bounding sphere to light space.
+	XMFLOAT3 sphereCenterLS;
+	XMStoreFloat3(&sphereCenterLS, XMVector3TransformCoord(targetPos, lightView));
+
+	// Ortho frustum in light space encloses scene.
+	float l = sphereCenterLS.x - 800;
+	float b = sphereCenterLS.y - 800;
+	float n = sphereCenterLS.z - 800;
+	float r = sphereCenterLS.x + 800;
+	float t = sphereCenterLS.y + 800;
+	float f = sphereCenterLS.z + 800;
+
+	XMMATRIX T(
+		0.5f, 0.0f, 0.0f, 0.0f,
+		0.0f, -0.5f, 0.0f, 0.0f,
+		0.0f, 0.0f, 1.0f, 0.0f,
+		0.5f, 0.5f, 0.0f, 1.0f);
+
+	XMMATRIX lightProj = XMMatrixOrthographicOffCenterLH(l, r, b, t, n, f);
+
+	TEngine::shadowTransform = lightView * lightProj;
+	shadowMatrixParam = lightView * lightProj * T;
+}
+
 //先建堆再建描述符
 void DxApp::CreateCbvSrvUavDescriptor()
 {
@@ -771,25 +814,21 @@ void DxApp::CreateCbvSrvUavDescriptor()
 	cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
 	ConstantBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvSrvUavHeapHandle, 0);
 	CalculateViewProj();
-	//TEngine::shadowTransform =
-	//{
-	//	0.01273, -0.01423, 0.02012, 0.00,
-	//	0.00, -0.02265, -0.01601, 0.00,
-	//	-0.02464, -0.00735, 0.01039,
-	//	0.00,0.50, 0.50, 0.50, 1.00
+	CalculateShadowTransform();
+	
+	//TEngine::shadowTransform=
+	//{ 
+	//	0.03785, 0.02341, 0.01656, 0.00,
+	//	0.00, 0.04529, -0.01601, 0.00,
+	//	-0.04055, 0.02185, 0.01545, 0.00,
+	//	0.00, -2.64502E-08, 0.50, 1.00
 	//};
-
-	TEngine::shadowTransform=
-	{ 
-		0.03438, 0.02513, 0.01777, 0.00,
-		0.00, 0.04529, -0.01601, 0.00,
-		-0.04353, 0.01985, 0.01404, 0.00,
-		0.00, -5.29003E-08, 0.50, 1.00
-	};
 
 	ConstMatrix viewProjMatrixData;
 	XMStoreFloat4x4(&viewProjMatrixData.viewProjMatrix, XMMatrixTranspose(viewProjMatrixParam));
 	XMStoreFloat4x4(&viewProjMatrixData.shadowTransform, XMMatrixTranspose(TEngine::shadowTransform));
+	XMStoreFloat4x4(&viewProjMatrixData.shadowMatirx, XMMatrixTranspose(shadowMatrixParam));
+
 	ConstantBuffer->CopyData(0, viewProjMatrixData);
 
 	auto diffuseTex1 = textures["diffuseTex1"]->Resource;
