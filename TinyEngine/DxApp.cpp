@@ -37,6 +37,16 @@ void DxApp::OnUpdate()
 		XMStoreFloat4x4(&worldMatrixConst.worldMatrix, XMMatrixTranspose(world));
 		worldMatrixConstantBuffer->CopyData(position++, worldMatrixConst);
 	}
+
+	//实时更新
+	CalculateViewProj();
+	CalculateShadowTransform();
+	ConstMatrix viewProjMatrixData;
+	XMStoreFloat4x4(&viewProjMatrixData.viewProjMatrix, XMMatrixTranspose(viewProjMatrixParam));
+	XMStoreFloat4x4(&viewProjMatrixData.shadowTransform, XMMatrixTranspose(TEngine::shadowTransform));
+	XMStoreFloat4x4(&viewProjMatrixData.shadowMatirx, XMMatrixTranspose(shadowMatrixParam));
+
+	ConstantBuffer->CopyData(0, viewProjMatrixData);
 }
 
 void DxApp::DrawSceneToShadow()
@@ -156,14 +166,6 @@ void DxApp::PopulateCommandList()
 	//第三个根参数为两个固定的矩阵
 	handleTemp.Offset(cbvSrvUavDescriptorSize);
 	commandList->SetGraphicsRootDescriptorTable(2, handleTemp);
-	//CD3DX12_GPU_DESCRIPTOR_HANDLE handleTempAgain = handleTemp;
-	//handleTempAgain.Offset(cbvSrvUavDescriptorSize);
-	//for (auto i = 0; i < 4; i++)
-	//{
-	//	handleTempAgain.Offset(cbvSrvUavDescriptorSize);
-	//}
-	//commandList->SetGraphicsRootDescriptorTable(4, handleTempAgain);
-	//再进行一次偏移来到第四个参数
 	handleTemp.Offset(cbvSrvUavDescriptorSize);
 	for (auto i = 0; i < TEngine::staticMeshDatas.size(); i++)
 	{
@@ -284,6 +286,12 @@ void DxApp::CreateSwapChain()
 	frameIndex = dxgiSwapChain->GetCurrentBackBufferIndex();
 }
 
+void DxApp::CreateShadowMap()
+{
+	shadowMap = std::make_unique<ShadowMap>(
+		d3dDevice.Get(), 2048, 2048);
+}
+
 void DxApp::CreateRtvAndDsvDescriptorHeap()
 {
 	// descriptor表示资源在显存中的存放地址（该资源可能是顶点纹理等）
@@ -318,6 +326,7 @@ void DxApp::CreateRtvAndDsvDescriptorHeap()
 		rtvHandle.Offset(1, rtvDescriptorSize);
 	}
 	//创建深度模板堆
+	//深度/模板堆大小为2，因为有一个shadowMap
 	D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
 	dsvHeapDesc.NumDescriptors = 2;
 	dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
@@ -796,6 +805,8 @@ void DxApp::CreateCbvSrvUavDescriptor()
 	cbvSrvUavDescriptorSize = d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	cbvSrvUavHeapHandle = cbvSrvUavHeap->GetCPUDescriptorHandleForHeapStart();
 	worldMatrixConstantBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvSrvUavHeapHandle, 0);
+
+	//创建多个CBV，对应模型的世界矩阵
 	for (auto i = 1; i < TEngine::staticMeshDatas.size(); i++)
 	{
 		cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
@@ -813,23 +824,6 @@ void DxApp::CreateCbvSrvUavDescriptor()
 
 	cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
 	ConstantBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvSrvUavHeapHandle, 0);
-	CalculateViewProj();
-	CalculateShadowTransform();
-	
-	//TEngine::shadowTransform=
-	//{ 
-	//	0.03785, 0.02341, 0.01656, 0.00,
-	//	0.00, 0.04529, -0.01601, 0.00,
-	//	-0.04055, 0.02185, 0.01545, 0.00,
-	//	0.00, -2.64502E-08, 0.50, 1.00
-	//};
-
-	ConstMatrix viewProjMatrixData;
-	XMStoreFloat4x4(&viewProjMatrixData.viewProjMatrix, XMMatrixTranspose(viewProjMatrixParam));
-	XMStoreFloat4x4(&viewProjMatrixData.shadowTransform, XMMatrixTranspose(TEngine::shadowTransform));
-	XMStoreFloat4x4(&viewProjMatrixData.shadowMatirx, XMMatrixTranspose(shadowMatrixParam));
-
-	ConstantBuffer->CopyData(0, viewProjMatrixData);
 
 	auto diffuseTex1 = textures["diffuseTex1"]->Resource;
 	auto normalTex1 = textures["normalTex1"]->Resource;
@@ -927,9 +921,7 @@ bool DxApp::InitDirectx12()
 	CreateCommandObjects();
 	//创建交换链
 	CreateSwapChain();
-
-	shadowMap = std::make_unique<ShadowMap>(
-		d3dDevice.Get(), 2048, 2048);
+	CreateShadowMap();
 
 	//创建渲染目标视图和深度模板视图的描述符堆
 	CreateRtvAndDsvDescriptorHeap();

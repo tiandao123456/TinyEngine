@@ -130,6 +130,7 @@ private:
 	void WaitForPreviousFrame();
 	void PopulateCommandList();
 	void CalculateViewProj();
+	void CreateShadowMap();
 	void CalculateShadowTransform();
 	void DrawSceneToShadow();
 

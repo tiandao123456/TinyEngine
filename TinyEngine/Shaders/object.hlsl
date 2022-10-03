@@ -32,7 +32,9 @@ VertexOut VS(VertexIn vin)
 {
 	VertexOut vout;
 
+	//计算经过mvp变换后的坐标
 	vout.pos = mul(mul(float4(vin.pos, 1.0f), world), viewProj);
+	//先变换到世界，再乘以light的view*正交投影*T(将x，y的坐标变换到[-1,1])
 	vout.shadowposH = mul(mul(float4(vin.pos, 1.0f), world), shadowMatrix);
 	vout.color = float4(vin.color, 1.0f);
 	vout.normal = vin.normal;
@@ -44,7 +46,7 @@ VertexOut VS(VertexIn vin)
 float ShadowCalculation(float4 ShadowPosH)
 {
 	//进行透视除法
-	ShadowPosH.xyz /= ShadowPosH.w;
+	//ShadowPosH.xyz /= ShadowPosH.w;
 	float currentDepth = ShadowPosH.z;
 	uint width, height, numMips;
 	shadowMap.GetDimensions(0, width, height, numMips);

@@ -104,10 +104,10 @@ void TEngine::GetSceneDatas()
 {
 	staticMeshDatas.push_back(sceneManage.GetStaticMeshActorData("SM_Chair"));
 	staticMeshDatas.push_back(sceneManage.GetStaticMeshActorData("Cube"));
-	//staticMeshDatas.push_back(sceneManage.GetStaticMeshActorData("S_Modular_Building_Window_ve0icepdw_lod3_Var1"));
 	cameraData = sceneManage.GetCameraActorData("CameraActor_2");
 	lightInfoData = sceneManage.GetLightInfo();
 	modelMatrixDatas.clear();
+	//存储从模型本地坐标到世界坐标转换的矩阵
 	for (auto i = 0; i < staticMeshDatas.size(); i++)
 		modelMatrixDatas.push_back(staticMeshDatas[i].modelMatrix);
 }
@@ -116,4 +116,5 @@ void TEngine::GameTick()
 	//在此处可以更新相机的位置
 
 	//以及更新光源的位置
+	TEngine::lightInfoData.location[0] += 0.1;
 }

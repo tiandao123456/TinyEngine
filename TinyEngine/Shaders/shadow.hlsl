@@ -26,6 +26,8 @@ struct VertexOut
 
 VertexOut VS(VertexIn vin)
 {
+	//计算深度图所用，只保留深度信息
+	//shadowTransform:灯光的view*正交投影变换
 	VertexOut vout;
 	float4 posT = mul(float4(vin.pos, 1.0f), world);
 	vout.pos = mul(posT,shadowTransform);
