@@ -13,7 +13,9 @@
 #include "Common/DxHelper.h"
 #include "include/json/json.h"
 #include "DDSTextureLoader.h"
+#include "CommonStruct.h"
 
+#include <wtypes.h>
 #include <string>
 #include <wrl.h>
 #include <shellapi.h>
@@ -22,8 +24,8 @@
 #include <memory.h>
 #include <vector>
 
-#define mClientWidth 800
-#define mClientHeight 600
+#define mClientWidth 1000
+#define mClientHeight 800
 #define Pi 3.1415926535
 #define totalNums 2
 

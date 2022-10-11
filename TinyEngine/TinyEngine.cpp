@@ -1,5 +1,4 @@
 ﻿#include "stdafx.h"
-#include "DxApp.h"
 #include "TEngine.h"
 using namespace std;
 

@@ -143,6 +143,8 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="AssetManage.h" />
+    <ClInclude Include="CommonStruct.h" />
     <ClInclude Include="Common\d3d12.h" />
     <ClInclude Include="Common\DxHelper.h" />
     <ClInclude Include="Common\UploadHeapBuffer.h" />
@@ -150,21 +152,28 @@
     <ClInclude Include="d3dUtil.h" />
     <ClInclude Include="d3dx12.h" />
     <ClInclude Include="DDSTextureLoader.h" />
-    <ClInclude Include="DxHelper.h" />
+    <ClInclude Include="D3D12RHI.h" />
+    <ClInclude Include="RHIBase.h" />
+    <ClInclude Include="JsonFileParse.h" />
     <ClInclude Include="SceneManage.h" />
-    <ClInclude Include="ShadowMap.h" />
+    <ClInclude Include="Singleton.h" />
     <ClInclude Include="stdafx.h" />
-    <ClInclude Include="DxApp.h" />
+    <ClInclude Include="Renderer.h" />
     <ClInclude Include="TEngine.h" />
+    <ClInclude Include="Win.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="AssetManage.cpp" />
     <ClCompile Include="d3dUtil.cpp" />
     <ClCompile Include="DDSTextureLoader.cpp" />
+    <ClCompile Include="D3D12RHI.cpp" />
+    <ClCompile Include="RHIBase.cpp" />
+    <ClCompile Include="JsonFileParse.cpp" />
     <ClCompile Include="SceneManage.cpp" />
-    <ClCompile Include="ShadowMap.cpp" />
     <ClCompile Include="TEngine.cpp" />
     <ClCompile Include="TinyEngine.cpp" />
-    <ClCompile Include="DxApp.cpp" />
+    <ClCompile Include="Renderer.cpp" />
+    <ClCompile Include="Win.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

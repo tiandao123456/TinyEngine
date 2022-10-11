@@ -12,32 +12,21 @@
 //法线贴图和纹理贴图
 Texture2D diffuseMap : register(t0);
 Texture2D normalMap : register(t1);
-Texture2D shadowMap : register(t4);
+Texture2D shadowMap : register(t2);
 
 //mvp矩阵，实际上vp矩阵可以固定，在每个
 //update中只传输model矩阵(将顶点从本地坐标系
 //转换到世界坐标系中)
 cbuffer cbWorld : register(b0)
 {
-	float4x4 world;
+	float4x4 worldMatrix;
 };
 
-//材质结构体
-cbuffer cbMaterial: register(b2)
+cbuffer cbViewProj: register(b1)
 {
-	// 散射光反射率
-	float4 diffuseAlbedo;
-	// 菲涅耳R0参数
-	float3 fresnelR0;
-	// 粗糙度
-	float roughness;
-};
-
-cbuffer cbViewProj: register(b3)
-{
-    float4x4 viewProj;
-	float4x4 shadowTransform;
-	float4x4 shadowMatrix;
+    float4x4 cameraVPMatrix;
+	float4x4 lightVPMatrix;
+	float4x4 lightVPTexMatrix;
 };
 
 //采样器

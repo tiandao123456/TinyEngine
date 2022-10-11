@@ -21,13 +21,10 @@
     <ClInclude Include="stdafx.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="DxApp.h">
+    <ClInclude Include="Renderer.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="DxHelper.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="SceneManage.h">
+    <ClInclude Include="JsonFileParse.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="TEngine.h">
@@ -54,7 +51,25 @@
     <ClInclude Include="Common\d3d12.h">
       <Filter>Common</Filter>
     </ClInclude>
-    <ClInclude Include="ShadowMap.h">
+    <ClInclude Include="D3D12RHI.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="RHIBase.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="AssetManage.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="SceneManage.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="CommonStruct.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Singleton.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Win.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
@@ -62,10 +77,10 @@
     <ClCompile Include="TinyEngine.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="DxApp.cpp">
+    <ClCompile Include="Renderer.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="SceneManage.cpp">
+    <ClCompile Include="JsonFileParse.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="TEngine.cpp">
@@ -77,7 +92,19 @@
     <ClCompile Include="DDSTextureLoader.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="ShadowMap.cpp">
+    <ClCompile Include="D3D12RHI.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="RHIBase.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="AssetManage.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="SceneManage.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Win.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
