@@ -15,7 +15,7 @@ void Renderer::Init()
 	rhiBase->RHICreateSwapChain(2, R8G8B8A8);
 	rhiBase->RHICreateRenderTarget(2);
 
-	rhiBase->RHICreateDepthStencil(D32, 2048, 2048);
+	rhiBase->RHICreateDepthStencil(D32, 8192, 8192);
 	rhiBase->RHICreateRootDescriptorTable();
 	rhiBase->RHICreateConstBufferAndShaderResource();
 	rhiBase->RHISetVertexAndIndexBuffer();

@@ -50,6 +50,7 @@ struct ConstMatrix
 	XMFLOAT4X4 cameraVPMatrix;
 	XMFLOAT4X4 lightVPMatrix;
 	XMFLOAT4X4 lightVPTexMatrix;
+	XMFLOAT3 cameraLoc;
 };
 
 struct Texture

@@ -49,12 +49,12 @@ void TEngine::GameTick()
 		theNumOneCamera.location[1] += 1.0f;
 		Win::GetInstance().lButtonDown = false;
 	}
-	if (Win::GetInstance().rButtonDown)
-	{
-		theNumOneCamera.location[0] += 1.0f;
-		theNumOneCamera.location[1] -= 1.0f;
-		Win::GetInstance().rButtonDown = false;
-	}
+	//if (Win::GetInstance().rButtonDown)
+	//{
+	//	theNumOneCamera.location[0] += 1.0f;
+	//	theNumOneCamera.location[1] -= 1.0f;
+	//	Win::GetInstance().rButtonDown = false;
+	//}
 
 	//以及更新光源的位置
 	SceneManage::GetInstance().GetLight().location[0] += 0.5f;

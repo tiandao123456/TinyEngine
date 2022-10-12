@@ -134,7 +134,7 @@ void D3D12RHI::CalculateCameraViewProj()
 	XMVECTOR target = XMVectorSet(theNumOneCamera.target[0], theNumOneCamera.target[1], theNumOneCamera.target[2], 1.0f);
 	XMVECTOR up = XMVectorSet(0.0, 0.0f, 1.0f, 0.0f);
 	XMMATRIX view = XMMatrixLookAtLH(pos, target, up);
-	XMMATRIX proj = XMMatrixPerspectiveFovLH(0.5f * Pi, theNumOneCamera.aspect, 1.0f, 1000.0f);
+	XMMATRIX proj = XMMatrixPerspectiveFovLH(0.25f * Pi, theNumOneCamera.aspect, 1.0f, 1000.0f);
 	cameraViewProjMatrix = view * proj;
 }
 
@@ -201,6 +201,12 @@ void D3D12RHI::RHIUpdate()
 	XMStoreFloat4x4(&constMatrix.cameraVPMatrix, XMMatrixTranspose(cameraViewProjMatrix));
 	XMStoreFloat4x4(&constMatrix.lightVPMatrix, XMMatrixTranspose(lightViewProjMatrix));
 	XMStoreFloat4x4(&constMatrix.lightVPTexMatrix, XMMatrixTranspose(lightViewProjTexMatrix));
+
+	auto camera = SceneManage::GetInstance().GetCameraActor();
+	auto theNumOneCamera = camera[camera.begin()->first];
+	constMatrix.cameraLoc.x = theNumOneCamera.location[0];
+	constMatrix.cameraLoc.y = theNumOneCamera.location[1];
+	constMatrix.cameraLoc.z = theNumOneCamera.location[2];
 
 	constMatrixBuffer->CopyData(0, constMatrix);
 }
@@ -416,6 +422,29 @@ void D3D12RHI::RHICreateDepthStencil(Dataformat dFormat, UINT shadowMapWidth, UI
 	d3dDevice->CreateDepthStencilView(shadowMapResource.Get(), &shadowMapDesc, shadowDsvHeapHandle);
 }
 
+std::array<const CD3DX12_STATIC_SAMPLER_DESC, 2> D3D12RHI::GetStaticSamplers()
+{
+	const CD3DX12_STATIC_SAMPLER_DESC pointWrap(
+		0, // shaderRegister
+		D3D12_FILTER_MIN_MAG_MIP_POINT, // filter
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressU
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP); // addressW
+
+	const CD3DX12_STATIC_SAMPLER_DESC shadow(
+		1, // shaderRegister
+		D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT, // filter
+		D3D12_TEXTURE_ADDRESS_MODE_BORDER,  // addressU
+		D3D12_TEXTURE_ADDRESS_MODE_BORDER,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_BORDER,  // addressW
+		0.0f,                               // mipLODBias
+		16,                                 // maxAnisotropy
+		D3D12_COMPARISON_FUNC_LESS_EQUAL,
+		D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK);
+
+	return {pointWrap, shadow};
+}
+
 //描述符表与描述符堆的关系：描述符表实际上是描述符堆的子范围
 //srv如果想要传进shader中，必须放入到描述符表中（descriptor table）
 //然后cbv同样也可以放到描述符表中，也可以不放直接传输到shader中
@@ -437,7 +466,7 @@ void D3D12RHI::RHICreateRootDescriptorTable()
 	if (FAILED(d3dDevice->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData))))
 		featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
 
-	CD3DX12_DESCRIPTOR_RANGE1 ranges[5];
+	CD3DX12_DESCRIPTOR_RANGE ranges[5];
 	//world矩阵全部绑定在b0寄存器上
 	ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);
 	//保存一些改变没有那么频繁的矩阵如灯光的vp矩阵，shadowTransform矩阵，相机的vp矩阵
@@ -449,36 +478,37 @@ void D3D12RHI::RHICreateRootDescriptorTable()
 	//绑定shadow map到t2上面
 	ranges[4].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2);
 
-	CD3DX12_ROOT_PARAMETER1 rootParameters[5];
+	CD3DX12_ROOT_PARAMETER rootParameters[5];
 	rootParameters[0].InitAsDescriptorTable(1, &ranges[0], D3D12_SHADER_VISIBILITY_ALL);
 	rootParameters[1].InitAsDescriptorTable(1, &ranges[1], D3D12_SHADER_VISIBILITY_ALL);
 	rootParameters[2].InitAsDescriptorTable(1, &ranges[2], D3D12_SHADER_VISIBILITY_ALL);
 	rootParameters[3].InitAsDescriptorTable(1, &ranges[3], D3D12_SHADER_VISIBILITY_ALL);
 	rootParameters[4].InitAsDescriptorTable(1, &ranges[4], D3D12_SHADER_VISIBILITY_ALL);
-
 	//采样器描述
-	D3D12_STATIC_SAMPLER_DESC sampler = {};
-	sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
-	sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-	sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-	sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-	sampler.MipLODBias = 0;
-	sampler.MaxAnisotropy = 0;
-	sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
-	sampler.BorderColor = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK;
-	sampler.MinLOD = 0.0f;
-	sampler.MaxLOD = D3D12_FLOAT32_MAX;
-	sampler.ShaderRegister = 0;
-	sampler.RegisterSpace = 0;
-	sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+	auto staticSamplers = GetStaticSamplers();
 
-	CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc;
-	rootSignatureDesc.Init_1_1(_countof(rootParameters), rootParameters, 1, &sampler, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+	// A root signature is an array of root parameters.
+	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(5, rootParameters,
+		(UINT)staticSamplers.size(), staticSamplers.data(),
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
-	ComPtr<ID3DBlob> signature;
-	ComPtr<ID3DBlob> error;
-	ThrowIfFailed(D3DX12SerializeVersionedRootSignature(&rootSignatureDesc, featureData.HighestVersion, &signature, &error));
-	ThrowIfFailed(d3dDevice->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&rootSignature)));
+	// create a root signature with a single slot which points to a descriptor range consisting of a single constant buffer
+	ComPtr<ID3DBlob> serializedRootSig = nullptr;
+	ComPtr<ID3DBlob> errorBlob = nullptr;
+	HRESULT hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1,
+		serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf());
+
+	if (errorBlob != nullptr)
+	{
+		::OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+	}
+	ThrowIfFailed(hr);
+
+	ThrowIfFailed(d3dDevice->CreateRootSignature(
+		0,
+		serializedRootSig->GetBufferPointer(),
+		serializedRootSig->GetBufferSize(),
+		IID_PPV_ARGS(rootSignature.GetAddressOf())));
 }
 
 void D3D12RHI::LoadTexture()

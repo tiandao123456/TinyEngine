@@ -6,6 +6,7 @@
 #include "Win.h"
 #include <unordered_map>
 #include <d3d12.h>
+#include <array>
 
 #pragma comment(lib,"d3dcompiler.lib")
 #pragma comment(lib, "D3D12.lib")
@@ -39,6 +40,7 @@ public:
 	void WaitForPreviousFrame();
 	void CalculateCameraViewProj();
 	void CalculateLightViewProjTex();
+	std::array<const CD3DX12_STATIC_SAMPLER_DESC, 2> GetStaticSamplers();
 	void CreateDefaultHeapBuffer(ID3D12GraphicsCommandList* cmdList, const void* data, const int size, ComPtr<ID3D12Resource>& vertexBuffer);
 
 private:

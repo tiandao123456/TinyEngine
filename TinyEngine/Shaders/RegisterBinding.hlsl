@@ -27,10 +27,12 @@ cbuffer cbViewProj: register(b1)
     float4x4 cameraVPMatrix;
 	float4x4 lightVPMatrix;
 	float4x4 lightVPTexMatrix;
+	float3 cameraLoc;
 };
 
 //²ÉÑùÆ÷
 SamplerState gsamLinear : register(s0);
+SamplerComparisonState gsamShadow : register(s1);
 
 
 
