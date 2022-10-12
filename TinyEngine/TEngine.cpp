@@ -38,7 +38,23 @@ void TEngine::Run()
 
 void TEngine::GameTick()
 {
-	//在此处可以更新相机的位置
+	//在此处可以更新相机的位置，计算相机的vp矩阵等
+	//计算完成后仍然由api负责传输，但是更新的逻辑在此处
+	auto &camera = SceneManage::GetInstance().GetCameraActor();
+	auto &theNumOneCamera = camera[camera.begin()->first];
+
+	if (Win::GetInstance().lButtonDown)
+	{
+		theNumOneCamera.location[0] -= 1.0f;
+		theNumOneCamera.location[1] += 1.0f;
+		Win::GetInstance().lButtonDown = false;
+	}
+	if (Win::GetInstance().rButtonDown)
+	{
+		theNumOneCamera.location[0] += 1.0f;
+		theNumOneCamera.location[1] -= 1.0f;
+		Win::GetInstance().rButtonDown = false;
+	}
 
 	//以及更新光源的位置
 	SceneManage::GetInstance().GetLight().location[0] += 0.5f;

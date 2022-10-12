@@ -12,6 +12,8 @@ public:
 	bool InitMainWindow();
 
 public:
+	static bool lButtonDown;
+	static bool rButtonDown;
 	static HWND mhMainWnd;
 };
 
