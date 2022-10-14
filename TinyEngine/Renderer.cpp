@@ -38,6 +38,9 @@ void Renderer::RenderTick()
 	//在此处更新阳光的vp矩阵以及vpt矩阵
 	//并传输给RHI进行更新，避免多个api(directx,vulkan,opengl)
 	//在底层更新这些矩阵信息产生多套更新vp矩阵的逻辑
+	//但在directx中有现成的函数所以此处默认在外部处理生成了矩阵
+	//GenerateMatrix();
+
 	rhiBase->RHIUpdate();
 	rhiBase->RHIRender();
 }

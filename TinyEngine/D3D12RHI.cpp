@@ -68,22 +68,39 @@ void D3D12RHI::RHIPopulateCommandList()
 	commandList->RSSetViewports(1, &baseViewport);
 	commandList->RSSetScissorRects(1, &baseScissorRect);
 
-	// 表明后台缓冲将被使用作为渲染目标
-	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(rtvHeap->GetCPUDescriptorHandleForHeapStart(), frameIndex, rtvDescriptorSize);
-	CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle(dsvHeap->GetCPUDescriptorHandleForHeapStart());
-	commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, &dsvHandle);
 
-	// Record commands.
-	const float clearColor[] = { 0.690196097f, 0.768627524f, 0.870588303f, 1.000000000f };
-	commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
-	commandList->ClearDepthStencilView(dsvHeap->GetCPUDescriptorHandleForHeapStart(), D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+	// 渲染到off-screen表面与base pass进行混合
+	// Change offscreen texture to be used as a a render target output.
+	auto resourceBarrierForPostProcess = CD3DX12_RESOURCE_BARRIER::Transition(offScreenResource.Get(),
+		D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	commandList->ResourceBarrier(1, &resourceBarrierForPostProcess);
 
-	auto resourceFromPresentToTarget = CD3DX12_RESOURCE_BARRIER::Transition(renderTargets[frameIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandleForPostProcess(rtvHeap->GetCPUDescriptorHandleForHeapStart());
+	rtvHandleForPostProcess.Offset(2, rtvDescriptorSize);
+	// Clear the back buffer and depth buffer.
+	DirectX::XMFLOAT4 fogColor = { 0.7f, 0.7f, 0.7f, 1.0f };
+	commandList->ClearRenderTargetView(rtvHandleForPostProcess, (float*)&fogColor, 0, nullptr);
+	D3D12_CPU_DESCRIPTOR_HANDLE depthStencilView = dsvHeap->GetCPUDescriptorHandleForHeapStart();
+	commandList->ClearDepthStencilView(depthStencilView, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
+	// Specify the buffers we are going to render to.
+	commandList->OMSetRenderTargets(1, &rtvHandleForPostProcess, true, &depthStencilView);
+
+	//// 表明后台缓冲将被使用作为渲染目标
+	//CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(rtvHeap->GetCPUDescriptorHandleForHeapStart(), frameIndex, rtvDescriptorSize);
+	//CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle(dsvHeap->GetCPUDescriptorHandleForHeapStart());
+	//commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, &dsvHandle);
+
+	//// Record commands.
+	//const float clearColor[] = { 0.690196097f, 0.768627524f, 0.870588303f, 1.000000000f };
+	//commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
+	//commandList->ClearDepthStencilView(dsvHeap->GetCPUDescriptorHandleForHeapStart(), D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+	//auto resourceFromPresentToTarget = CD3DX12_RESOURCE_BARRIER::Transition(renderTargets[frameIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	
 	// 通知驱动程序它需要同步对资源的多次访问 
 	// 用资源屏障来完成同步，资源屏障即进行资源的状态转换
 	// GPU上某个ALU对该资源可能是只读操作，某个ALU可能是只写操作，使用资源屏障就可以给资源一个状态
 	// 当资源变成只读状态时，表明某些ALU可以进行对资源进行操作了，只写同理
-	commandList->ResourceBarrier(1, &resourceFromPresentToTarget);
+	// commandList->ResourceBarrier(1, &resourceFromPresentToTarget);
 	commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
 	commandList->IASetIndexBuffer(&indexBufferView);
@@ -119,9 +136,61 @@ void D3D12RHI::RHIPopulateCommandList()
 		commandList->SetGraphicsRootDescriptorTable(3, cbvSrvUavHeapHandleCopy);
 		commandList->DrawIndexedInstanced((UINT)staticMeshIndicesNums[i], 1, recordIndexStartPosition[i], recondVertexStartPosition[i], 0);
 	}
-	auto resourceFromTargetToPresent = CD3DX12_RESOURCE_BARRIER::Transition(renderTargets[frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
-	// 表明后台缓冲现在将被呈现
-	commandList->ResourceBarrier(1, &resourceFromTargetToPresent);
+	//auto resourceFromTargetToPresent = CD3DX12_RESOURCE_BARRIER::Transition(renderTargets[frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+	//// 表明后台缓冲现在将被呈现
+	//commandList->ResourceBarrier(1, &resourceFromTargetToPresent);
+	auto x = CD3DX12_RESOURCE_BARRIER::Transition(offScreenResource.Get(),
+		D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
+	commandList->ResourceBarrier(1, &x);
+
+	commandList->SetComputeRootSignature(postProcessRootSignature.Get());
+	commandList->SetPipelineState(sobelPipelineState.Get());
+
+	auto handleForPostProcess = postProcessHandleSaved;
+	auto handleForPostProcessUav = postProcessHandleSaved;
+	handleForPostProcess.Offset(2, cbvSrvUavDescriptorSize);
+	handleForPostProcessUav.Offset(1, cbvSrvUavDescriptorSize);
+	commandList->SetComputeRootDescriptorTable(0, handleForPostProcess);
+	commandList->SetComputeRootDescriptorTable(2, handleForPostProcessUav);
+
+	auto resourceFromReadToAccess = CD3DX12_RESOURCE_BARRIER::Transition(outputResource.Get(),
+		D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+	commandList->ResourceBarrier(1, &resourceFromReadToAccess);
+
+	// How many groups do we need to dispatch to cover image, where each
+	// group covers 16x16 pixels.
+	UINT numGroupsX = (UINT)ceilf(mClientWidth / 16.0f);
+	UINT numGroupsY = (UINT)ceilf(mClientHeight / 16.0f);
+	commandList->Dispatch(numGroupsX, numGroupsY, 1);
+
+	auto resourceFromAccessToRead = CD3DX12_RESOURCE_BARRIER::Transition(outputResource.Get(),
+		D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_GENERIC_READ);
+	commandList->ResourceBarrier(1, &resourceFromAccessToRead);
+
+	auto resourceFromPresentToTarget = CD3DX12_RESOURCE_BARRIER::Transition(renderTargets[currBackBuffer].Get(),
+		D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	commandList->ResourceBarrier(1, &resourceFromPresentToTarget);
+
+	CD3DX12_CPU_DESCRIPTOR_HANDLE currentBackBufferView(rtvHeap->GetCPUDescriptorHandleForHeapStart(), currBackBuffer, rtvDescriptorSize);
+	// Specify the buffers we are going to render to.
+	commandList->OMSetRenderTargets(1, &currentBackBufferView, true, &depthStencilView);
+
+	commandList->SetGraphicsRootSignature(postProcessRootSignature.Get());
+	commandList->SetPipelineState(compositePipelineState.Get());
+	commandList->SetGraphicsRootDescriptorTable(0, handleForPostProcess);
+	commandList->SetGraphicsRootDescriptorTable(1, postProcessHandleSaved);
+
+	commandList->IASetVertexBuffers(0, 1, nullptr);
+	commandList->IASetIndexBuffer(nullptr);
+	commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+	commandList->DrawInstanced(6, 1, 0, 0);
+
+	// Indicate a state transition on the resource usage.
+	auto y = CD3DX12_RESOURCE_BARRIER::Transition(renderTargets[currBackBuffer].Get(),
+		D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+	commandList->ResourceBarrier(1, &y);
+
 	ThrowIfFailed(commandList->Close());
 }
 
@@ -220,7 +289,10 @@ void D3D12RHI::RHIRender()
 	ID3D12CommandList* ppCommandLists[] = { commandList.Get() };
 	commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
 	// Present the frame.
-	ThrowIfFailed(dxgiSwapChain->Present(1, 0));
+	//ThrowIfFailed(dxgiSwapChain->Present(1, 0));
+
+	ThrowIfFailed(dxgiSwapChain->Present(0, 0));
+	currBackBuffer = (currBackBuffer + 1) % (swapChainBufferCount);
 
 	WaitForPreviousFrame();
 }
@@ -317,7 +389,7 @@ void D3D12RHI::RHICreateRenderTarget(UINT renderTargetNums)
 	// 最后屏幕获取渲染目标视图的内容并呈现
 	// Describe and create a render target view (RTV) descriptor heap.
 	D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
-	rtvHeapDesc.NumDescriptors = renderTargetNums;
+	rtvHeapDesc.NumDescriptors = renderTargetNums + 1;
 	rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
 	rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 	ThrowIfFailed(d3dDevice->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&rtvHeap)));
@@ -420,10 +492,57 @@ void D3D12RHI::RHICreateDepthStencil(Dataformat dFormat, UINT shadowMapWidth, UI
 	dsvDescriptorSize = d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
 	shadowDsvHeapHandle.Offset(1, dsvDescriptorSize);
 	d3dDevice->CreateDepthStencilView(shadowMapResource.Get(), &shadowMapDesc, shadowDsvHeapHandle);
+
+	D3D12_RESOURCE_DESC texDesc;
+	ZeroMemory(&texDesc, sizeof(D3D12_RESOURCE_DESC));
+	texDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	texDesc.Alignment = 0;
+	texDesc.Width = mClientWidth;
+	texDesc.Height = mClientHeight;
+	texDesc.DepthOrArraySize = 1;
+	texDesc.MipLevels = 1;
+	texDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	texDesc.SampleDesc.Count = 1;
+	texDesc.SampleDesc.Quality = 0;
+	texDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	texDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+
+	ThrowIfFailed(d3dDevice->CreateCommittedResource(
+		&heapProperties,
+		D3D12_HEAP_FLAG_NONE,
+		&texDesc,
+		D3D12_RESOURCE_STATE_GENERIC_READ,
+		nullptr,
+		IID_PPV_ARGS(&outputResource)));
+
+	D3D12_RESOURCE_DESC offScreenTexDesc;
+	ZeroMemory(&texDesc, sizeof(D3D12_RESOURCE_DESC));
+	offScreenTexDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	offScreenTexDesc.Alignment = 0;
+	offScreenTexDesc.Width = mClientWidth;
+	offScreenTexDesc.Height = mClientHeight;
+	offScreenTexDesc.DepthOrArraySize = 1;
+	offScreenTexDesc.MipLevels = 1;
+	offScreenTexDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	offScreenTexDesc.SampleDesc.Count = 1;
+	offScreenTexDesc.SampleDesc.Quality = 0;
+	offScreenTexDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	offScreenTexDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+
+	ThrowIfFailed(d3dDevice->CreateCommittedResource(
+		&heapProperties,
+		D3D12_HEAP_FLAG_NONE,
+		&offScreenTexDesc,
+		D3D12_RESOURCE_STATE_GENERIC_READ,
+		nullptr,
+		IID_PPV_ARGS(&offScreenResource)));
 }
 
-std::array<const CD3DX12_STATIC_SAMPLER_DESC, 2> D3D12RHI::GetStaticSamplers()
+std::array<const CD3DX12_STATIC_SAMPLER_DESC, 7> D3D12RHI::GetStaticSamplers()
 {
+	// Applications usually only need a handful of samplers.  So just define them all up front
+		// and keep them available as part of the root signature.  
+
 	const CD3DX12_STATIC_SAMPLER_DESC pointWrap(
 		0, // shaderRegister
 		D3D12_FILTER_MIN_MAG_MIP_POINT, // filter
@@ -431,8 +550,47 @@ std::array<const CD3DX12_STATIC_SAMPLER_DESC, 2> D3D12RHI::GetStaticSamplers()
 		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressV
 		D3D12_TEXTURE_ADDRESS_MODE_WRAP); // addressW
 
-	const CD3DX12_STATIC_SAMPLER_DESC shadow(
+	const CD3DX12_STATIC_SAMPLER_DESC pointClamp(
 		1, // shaderRegister
+		D3D12_FILTER_MIN_MAG_MIP_POINT, // filter
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressU
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP); // addressW
+
+	const CD3DX12_STATIC_SAMPLER_DESC linearWrap(
+		2, // shaderRegister
+		D3D12_FILTER_MIN_MAG_MIP_LINEAR, // filter
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressU
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP); // addressW
+
+	const CD3DX12_STATIC_SAMPLER_DESC linearClamp(
+		3, // shaderRegister
+		D3D12_FILTER_MIN_MAG_MIP_LINEAR, // filter
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressU
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP); // addressW
+
+	const CD3DX12_STATIC_SAMPLER_DESC anisotropicWrap(
+		4, // shaderRegister
+		D3D12_FILTER_ANISOTROPIC, // filter
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressU
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressW
+		0.0f,                             // mipLODBias
+		8);                               // maxAnisotropy
+
+	const CD3DX12_STATIC_SAMPLER_DESC anisotropicClamp(
+		5, // shaderRegister
+		D3D12_FILTER_ANISOTROPIC, // filter
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressU
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressW
+		0.0f,                              // mipLODBias
+		8);                                // maxAnisotropy
+
+	const CD3DX12_STATIC_SAMPLER_DESC shadow(
+		6, // shaderRegister
 		D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT, // filter
 		D3D12_TEXTURE_ADDRESS_MODE_BORDER,  // addressU
 		D3D12_TEXTURE_ADDRESS_MODE_BORDER,  // addressV
@@ -442,7 +600,55 @@ std::array<const CD3DX12_STATIC_SAMPLER_DESC, 2> D3D12RHI::GetStaticSamplers()
 		D3D12_COMPARISON_FUNC_LESS_EQUAL,
 		D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK);
 
-	return {pointWrap, shadow};
+	return 
+	{
+		pointWrap, pointClamp,
+		linearWrap, linearClamp,
+		anisotropicWrap, anisotropicClamp, shadow 
+	};
+}
+
+void D3D12RHI::postProcessRootDescriptorTable()
+{
+	CD3DX12_DESCRIPTOR_RANGE srvTable0;
+	srvTable0.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+	CD3DX12_DESCRIPTOR_RANGE srvTable1;
+	srvTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+	CD3DX12_DESCRIPTOR_RANGE uavTable0;
+	uavTable0.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
+
+	// Root parameter can be a table, root descriptor or root constants.
+	CD3DX12_ROOT_PARAMETER slotRootParameter[3];
+
+	// Perfomance TIP: Order from most frequent to least frequent.
+	slotRootParameter[0].InitAsDescriptorTable(1, &srvTable0);
+	slotRootParameter[1].InitAsDescriptorTable(1, &srvTable1);
+	slotRootParameter[2].InitAsDescriptorTable(1, &uavTable0);
+
+	auto staticSamplers = GetStaticSamplers();
+
+	// A root signature is an array of root parameters.
+	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(3, slotRootParameter,
+		(UINT)staticSamplers.size(), staticSamplers.data(),
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+	// create a root signature with a single slot which points to a descriptor range consisting of a single constant buffer
+	ComPtr<ID3DBlob> serializedRootSig = nullptr;
+	ComPtr<ID3DBlob> errorBlob = nullptr;
+	HRESULT hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1,
+		serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf());
+
+	if (errorBlob != nullptr)
+	{
+		::OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+	}
+	ThrowIfFailed(hr);
+
+	ThrowIfFailed(d3dDevice->CreateRootSignature(
+		0,
+		serializedRootSig->GetBufferPointer(),
+		serializedRootSig->GetBufferSize(),
+		IID_PPV_ARGS(postProcessRootSignature.GetAddressOf())));
 }
 
 //描述符表与描述符堆的关系：描述符表实际上是描述符堆的子范围
@@ -509,6 +715,8 @@ void D3D12RHI::RHICreateRootDescriptorTable()
 		serializedRootSig->GetBufferPointer(),
 		serializedRootSig->GetBufferSize(),
 		IID_PPV_ARGS(rootSignature.GetAddressOf())));
+
+	postProcessRootDescriptorTable();
 }
 
 void D3D12RHI::LoadTexture()
@@ -554,7 +762,8 @@ void D3D12RHI::RHICreateConstBufferAndShaderResource()
 	// NumDescripters为1的含义为该常量缓冲视图描述符堆能够绑定到渲染管线上
 	D3D12_DESCRIPTOR_HEAP_DESC cbvSrvUavHeapDesc;
 	// 描述符堆中的cbv、srv、uav总数
-	cbvSrvUavHeapDesc.NumDescriptors = cbvNums + srvNums + 1;
+	// 1为一个常量结构，3为后处理边缘检测需要的资源
+	cbvSrvUavHeapDesc.NumDescriptors = cbvNums + srvNums + 1 + 3;
 	cbvSrvUavHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	cbvSrvUavHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	cbvSrvUavHeapDesc.NodeMask = 0;
@@ -564,12 +773,14 @@ void D3D12RHI::RHICreateConstBufferAndShaderResource()
 	constMatrixBuffer = std::make_unique<UploadHeapConstantBuffer<ConstMatrix>>(d3dDevice.Get(), 1);
 	cbvSrvUavDescriptorSize = d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	cbvSrvUavHeapHandle = cbvSrvUavHeap->GetCPUDescriptorHandleForHeapStart();
+	cbvSrvUavHeapHandleForGpu = cbvSrvUavHeap->GetGPUDescriptorHandleForHeapStart();
 
 	//创建多个cb的描述，对应模型的世界矩阵
 	for (auto i = 0; i < cbvNums; i++)
 	{
 		worldMatrixBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvSrvUavHeapHandle, i);
 		cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
+		cbvSrvUavHeapHandleForGpu.Offset(1, cbvSrvUavDescriptorSize);
 	}
 	//创建一个cb的描述，对应ConstMatirx
 	constMatrixBuffer->CreateConstantBufferView(d3dDevice.Get(), cbvSrvUavHeapHandle, 0);
@@ -584,6 +795,7 @@ void D3D12RHI::RHICreateConstBufferAndShaderResource()
 	for (auto i = 0; i < (srvNums - 1) / 4; i++)
 	{
 		cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
+		cbvSrvUavHeapHandleForGpu.Offset(1, cbvSrvUavDescriptorSize);
 		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 		srvDesc.Format = diffuseTexBrick->GetDesc().Format;
@@ -593,10 +805,12 @@ void D3D12RHI::RHICreateConstBufferAndShaderResource()
 		d3dDevice->CreateShaderResourceView(diffuseTexBrick.Get(), &srvDesc, cbvSrvUavHeapHandle);
 
 		cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
+		cbvSrvUavHeapHandleForGpu.Offset(1, cbvSrvUavDescriptorSize);
 		srvDesc.Format = normalTexBrick->GetDesc().Format;
 		d3dDevice->CreateShaderResourceView(normalTexBrick.Get(), &srvDesc, cbvSrvUavHeapHandle);
 
 		cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
+		cbvSrvUavHeapHandleForGpu.Offset(1, cbvSrvUavDescriptorSize);
 		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc1 = {};
 		srvDesc1.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 		srvDesc1.Format = diffuseTexTile->GetDesc().Format;
@@ -606,12 +820,14 @@ void D3D12RHI::RHICreateConstBufferAndShaderResource()
 		d3dDevice->CreateShaderResourceView(diffuseTexTile.Get(), &srvDesc1, cbvSrvUavHeapHandle);
 
 		cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
+		cbvSrvUavHeapHandleForGpu.Offset(1, cbvSrvUavDescriptorSize);
 		srvDesc1.Format = normalTexTile->GetDesc().Format;
 		d3dDevice->CreateShaderResourceView(normalTexTile.Get(), &srvDesc1, cbvSrvUavHeapHandle);
 	}
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE shadowMapHandle = cbvSrvUavHeapHandle;
 	shadowMapHandle.Offset(1, cbvSrvUavDescriptorSize);
+	cbvSrvUavHeapHandleForGpu.Offset(1, cbvSrvUavDescriptorSize);
 
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
@@ -622,6 +838,40 @@ void D3D12RHI::RHICreateConstBufferAndShaderResource()
 	srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
 	srvDesc.Texture2D.PlaneSlice = 0;
 	d3dDevice->CreateShaderResourceView(shadowMapResource.Get(), &srvDesc, shadowMapHandle);
+
+	auto postProcessHandle = shadowMapHandle;
+	postProcessHandle.Offset(1, cbvSrvUavDescriptorSize);
+	cbvSrvUavHeapHandleForGpu.Offset(1, cbvSrvUavDescriptorSize);
+	postProcessHandleSaved = cbvSrvUavHeapHandleForGpu;
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc1 = {};
+	srvDesc1.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc1.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	srvDesc1.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvDesc1.Texture2D.MostDetailedMip = 0;
+	srvDesc1.Texture2D.MipLevels = 1;
+	d3dDevice->CreateShaderResourceView(outputResource.Get(), &srvDesc1, postProcessHandle);
+
+	postProcessHandle.Offset(1, cbvSrvUavDescriptorSize);
+	D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+	uavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+	uavDesc.Texture2D.MipSlice = 0;
+	d3dDevice->CreateUnorderedAccessView(outputResource.Get(), nullptr, &uavDesc, postProcessHandle);
+
+	//render target的资源
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc2 = {};
+	srvDesc2.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc2.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	srvDesc2.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvDesc2.Texture2D.MostDetailedMip = 0;
+	srvDesc2.Texture2D.MipLevels = 1;
+
+	postProcessHandle.Offset(1, cbvSrvUavDescriptorSize);
+	d3dDevice->CreateShaderResourceView(offScreenResource.Get(), &srvDesc2, postProcessHandle);
+
+	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(rtvHeap->GetCPUDescriptorHandleForHeapStart());
+	rtvHandle.Offset(2, rtvDescriptorSize);
+	d3dDevice->CreateRenderTargetView(offScreenResource.Get(), nullptr, rtvHandle);
 }
 
 void D3D12RHI::CreateDefaultHeapBuffer(ID3D12GraphicsCommandList* cmdList, const void* data, const int size, ComPtr<ID3D12Resource>& vertexBuffer)
@@ -763,6 +1013,15 @@ void D3D12RHI::RHICreatePipeLineState()
 
 	ThrowIfFailed(d3dDevice->CreateGraphicsPipelineState(&basePassPsoDesc, IID_PPV_ARGS(&basePassPipelineState)));
 
+	//D3D12PSODesc basePsoDesc(inputElementDescs, 3, rootSignature, shaders, "MainShaderVS", "MainShaderPS",
+	//	CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT), CD3DX12_BLEND_DESC(D3D12_DEFAULT), 
+	//	CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT),UINT_MAX, D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE, 
+	//	1, DXGI_FORMAT_R8G8B8A8_UNORM, 1);
+
+	//d3dDevice->CreateGraphicsPipelineState(&basePsoDesc.GetPSODesc(), IID_PPV_ARGS(&pipelineState["basePsoDesc"]));
+
+
+
 	// PSO for shadowmap.
 	shaders["GenerateShadowVS"] = d3dUtil::CompileShader(L"Shaders\\GenerateShadow.hlsl", nullptr, "VS", "vs_5_1");
 	shaders["GenerateShadowPS"] = d3dUtil::CompileShader(L"Shaders\\GenerateShadow.hlsl", nullptr, "PS", "ps_5_1");
@@ -800,6 +1059,53 @@ void D3D12RHI::RHICreatePipeLineState()
 	shadowPassPsoDesc.NumRenderTargets = 0;
 
 	ThrowIfFailed(d3dDevice->CreateGraphicsPipelineState(&shadowPassPsoDesc, IID_PPV_ARGS(&shadowPassPipelineState)));
+
+
+	shaders["compositeVS"] = d3dUtil::CompileShader(L"Shaders\\Composite.hlsl", nullptr, "VS", "vs_5_0");
+	shaders["compositePS"] = d3dUtil::CompileShader(L"Shaders\\Composite.hlsl", nullptr, "PS", "ps_5_0");
+	shaders["sobelCS"] = d3dUtil::CompileShader(L"Shaders\\Sobel.hlsl", nullptr, "SobelCS", "cs_5_0");
+	//
+	// PSO for compositing post process
+	//
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC compositePsoDesc;
+	ZeroMemory(&compositePsoDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
+	compositePsoDesc.InputLayout = { inputElementDescs, _countof(inputElementDescs) };
+	compositePsoDesc.pRootSignature = rootSignature.Get();
+	compositePsoDesc.VS =
+	{
+		reinterpret_cast<BYTE*>(shaders["compositeVS"]->GetBufferPointer()),
+		shaders["compositeVS"]->GetBufferSize()
+	};
+	compositePsoDesc.PS =
+	{
+		reinterpret_cast<BYTE*>(shaders["compositePS"]->GetBufferPointer()),
+		shaders["compositePS"]->GetBufferSize()
+	};
+	compositePsoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+	compositePsoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+	compositePsoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+	compositePsoDesc.SampleMask = UINT_MAX;
+	compositePsoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+	compositePsoDesc.NumRenderTargets = 1;
+	compositePsoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+	compositePsoDesc.SampleDesc.Count = 1;
+	compositePsoDesc.SampleDesc.Quality = 0;
+	compositePsoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+	compositePsoDesc.pRootSignature = postProcessRootSignature.Get();
+	compositePsoDesc.DepthStencilState.DepthEnable = false;
+	compositePsoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+	compositePsoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+	ThrowIfFailed(d3dDevice->CreateGraphicsPipelineState(&compositePsoDesc, IID_PPV_ARGS(&compositePipelineState)));
+
+	D3D12_COMPUTE_PIPELINE_STATE_DESC sobelPSO = {};
+	sobelPSO.pRootSignature = postProcessRootSignature.Get();
+	sobelPSO.CS =
+	{
+		reinterpret_cast<BYTE*>(shaders["sobelCS"]->GetBufferPointer()),
+		shaders["sobelCS"]->GetBufferSize()
+	};
+	sobelPSO.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
+	ThrowIfFailed(d3dDevice->CreateComputePipelineState(&sobelPSO, IID_PPV_ARGS(&sobelPipelineState)));
 }
 
 void D3D12RHI::WaitForPreviousFrame()

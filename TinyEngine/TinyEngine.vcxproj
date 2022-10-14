@@ -149,6 +149,7 @@
     <ClInclude Include="Common\DxHelper.h" />
     <ClInclude Include="Common\UploadHeapBuffer.h" />
     <ClInclude Include="Common\UploadHeapConstantBuffer.h" />
+    <ClInclude Include="D3D12PSODesc.h" />
     <ClInclude Include="d3dUtil.h" />
     <ClInclude Include="d3dx12.h" />
     <ClInclude Include="DDSTextureLoader.h" />
@@ -164,6 +165,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AssetManage.cpp" />
+    <ClCompile Include="D3D12PSODesc.cpp" />
     <ClCompile Include="d3dUtil.cpp" />
     <ClCompile Include="DDSTextureLoader.cpp" />
     <ClCompile Include="D3D12RHI.cpp" />

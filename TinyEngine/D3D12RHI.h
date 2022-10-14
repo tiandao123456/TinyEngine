@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <d3d12.h>
 #include <array>
+#include "D3D12PSODesc.h"
 
 #pragma comment(lib,"d3dcompiler.lib")
 #pragma comment(lib, "D3D12.lib")
@@ -36,11 +37,13 @@ public:
 	virtual void RHIRender();
 	virtual void RHIDrawSceneToShadow();
 
+	void postProcessRootDescriptorTable();
+
 	void LoadTexture();
 	void WaitForPreviousFrame();
 	void CalculateCameraViewProj();
 	void CalculateLightViewProjTex();
-	std::array<const CD3DX12_STATIC_SAMPLER_DESC, 2> GetStaticSamplers();
+	std::array<const CD3DX12_STATIC_SAMPLER_DESC, 7> GetStaticSamplers();
 	void CreateDefaultHeapBuffer(ID3D12GraphicsCommandList* cmdList, const void* data, const int size, ComPtr<ID3D12Resource>& vertexBuffer);
 
 private:
@@ -75,6 +78,7 @@ private:
 	std::unique_ptr<UploadHeapConstantBuffer<WorldMatrix>> worldMatrixBuffer;
 	std::unique_ptr<UploadHeapConstantBuffer<ConstMatrix>> constMatrixBuffer;
 	CD3DX12_CPU_DESCRIPTOR_HANDLE cbvSrvUavHeapHandle;
+	CD3DX12_GPU_DESCRIPTOR_HANDLE cbvSrvUavHeapHandleForGpu;
 
 private:
 	D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
@@ -89,6 +93,8 @@ private:
 
 private:
 	std::unordered_map<std::string, ComPtr<ID3DBlob>> shaders;
+	//根据名称索引相应的pipeline state
+	std::unordered_map<std::string, ComPtr<ID3D12PipelineState>> pipelineState;
 	ComPtr<ID3D12PipelineState> basePassPipelineState = nullptr;
 	ComPtr<ID3D12PipelineState> shadowPassPipelineState = nullptr;
 	HANDLE fenceEvent;
@@ -104,5 +110,14 @@ private:
 
 	std::vector<int> recordIndexStartPosition;
 	std::vector<int> recondVertexStartPosition;
+
+private:
+	ComPtr<ID3D12Resource> outputResource = nullptr;
+	ComPtr<ID3D12Resource> offScreenResource = nullptr;
+	ComPtr<ID3D12RootSignature> postProcessRootSignature = nullptr;
+	ComPtr<ID3D12PipelineState> compositePipelineState = nullptr;
+	ComPtr<ID3D12PipelineState> sobelPipelineState = nullptr;
+	CD3DX12_GPU_DESCRIPTOR_HANDLE postProcessHandleSaved;
+	int currBackBuffer = 0;
 };
 

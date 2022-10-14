@@ -80,10 +80,10 @@ float4 PS(VertexOut pin) : SV_Target
 	float4 lightColor = float4(1.0, 1.0, 1.0, 1.0);
 	float4 ambientColor = float4(0.1, 0.0, 0.0, 1.0);
 	float4 specularColor = float4(1.0, 1.0, 1.0, 1.0);
-	float shiness = 40.0;
+	float shiness = 20.0;
 
-	float4 diffuseAlbedo = diffuseMap.Sample(gsamLinear, pin.uv);
-	float4 pixelNormal = normalMap.Sample(gsamLinear, pin.uv);
+	float4 diffuseAlbedo = diffuseMap.Sample(gsamPointWrap, pin.uv);
+	float4 pixelNormal = normalMap.Sample(gsamPointWrap, pin.uv);
 	pixelNormal = normalize(pixelNormal);
 
 	lightDirection = normalize(lightDirection);
@@ -95,7 +95,7 @@ float4 PS(VertexOut pin) : SV_Target
 	float specularDot = max(dot(halfDir, float3(pixelNormal.x, pixelNormal.y, pixelNormal.z)), 0.0f);
 	specularColor = dotNormalLight * pow(specularDot,shiness) * specularColor * lightColor;
 
-	return diffuseColor * (ShadowCalculation(pin.shadowposH) + 0.1) + ambientColor + specularColor;
+	return (diffuseColor + specularColor) * (ShadowCalculation(pin.shadowposH) + 0.1) + ambientColor;
 }
 
 
