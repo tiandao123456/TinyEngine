@@ -95,8 +95,6 @@ private:
 	std::unordered_map<std::string, ComPtr<ID3DBlob>> shaders;
 	//根据名称索引相应的pipeline state
 	std::unordered_map<std::string, ComPtr<ID3D12PipelineState>> pipelineState;
-	ComPtr<ID3D12PipelineState> basePassPipelineState = nullptr;
-	ComPtr<ID3D12PipelineState> shadowPassPipelineState = nullptr;
 	HANDLE fenceEvent;
 	ComPtr<ID3D12Fence> fence;
 	UINT64 fenceValue;
@@ -115,8 +113,6 @@ private:
 	ComPtr<ID3D12Resource> outputResource = nullptr;
 	ComPtr<ID3D12Resource> offScreenResource = nullptr;
 	ComPtr<ID3D12RootSignature> postProcessRootSignature = nullptr;
-	ComPtr<ID3D12PipelineState> compositePipelineState = nullptr;
-	ComPtr<ID3D12PipelineState> sobelPipelineState = nullptr;
 	CD3DX12_GPU_DESCRIPTOR_HANDLE postProcessHandleSaved;
 	int currBackBuffer = 0;
 };

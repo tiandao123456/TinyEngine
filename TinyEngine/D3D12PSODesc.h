@@ -22,9 +22,15 @@ public:
 		D3D12_PRIMITIVE_TOPOLOGY_TYPE primitiveTopologyType,
 		UINT numRenderTargets,
 		DXGI_FORMAT dxgiFormat,
-		UINT count
+		UINT count,
+		//默认值
+		UINT quality = 0,
+		DXGI_FORMAT dsvFormat = DXGI_FORMAT_UNKNOWN,
+		DXGI_FORMAT rtvFormat = DXGI_FORMAT_UNKNOWN
 	)
 	{
+		//在给pipelineStateDesc赋值的时候需要先把它清空
+		ZeroMemory(&pipelineStateDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
 		pipelineStateDesc.InputLayout = { inputElementDescs, nums };
 		pipelineStateDesc.pRootSignature = rootSignature.Get();
 		pipelineStateDesc.VS =
@@ -48,6 +54,10 @@ public:
 		pipelineStateDesc.RTVFormats[0] =dxgiFormat;
 		//描述资源的多重采样，此处设置为1即不进行多重采样
 		pipelineStateDesc.SampleDesc.Count = count;
+
+		pipelineStateDesc.SampleDesc.Quality = quality;
+		pipelineStateDesc.DSVFormat = dsvFormat;
+		pipelineStateDesc.RTVFormats[0] = rtvFormat;
 	}
 	const D3D12_GRAPHICS_PIPELINE_STATE_DESC &GetPSODesc()
 	{

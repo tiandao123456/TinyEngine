@@ -27,7 +27,7 @@ void D3D12RHI::RHIDrawSceneToShadow()
 		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
 	commandList->OMSetRenderTargets(0, nullptr, false, &shadowDsvHeapHandle);
 
-	commandList->SetPipelineState(shadowPassPipelineState.Get());
+	commandList->SetPipelineState(pipelineState["shadowPsoDesc"].Get());
 	commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
 	commandList->IASetIndexBuffer(&indexBufferView);
@@ -61,7 +61,7 @@ void D3D12RHI::RHIDrawSceneToShadow()
 void D3D12RHI::RHIPopulateCommandList()
 {
 	ThrowIfFailed(commandAllocator->Reset());
-	ThrowIfFailed(commandList->Reset(commandAllocator.Get(), basePassPipelineState.Get()));
+	ThrowIfFailed(commandList->Reset(commandAllocator.Get(), pipelineState["basePsoDesc"].Get()));
 
 	RHIDrawSceneToShadow();
 	//绑定视口到渲染管线的光栅化阶段
@@ -104,7 +104,7 @@ void D3D12RHI::RHIPopulateCommandList()
 	commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
 	commandList->IASetIndexBuffer(&indexBufferView);
-	commandList->SetPipelineState(basePassPipelineState.Get());
+	commandList->SetPipelineState(pipelineState["basePsoDesc"].Get());
 
 	// 设置根签名，描述符堆以及描述符表
 	commandList->SetGraphicsRootSignature(rootSignature.Get());
@@ -144,7 +144,7 @@ void D3D12RHI::RHIPopulateCommandList()
 	commandList->ResourceBarrier(1, &x);
 
 	commandList->SetComputeRootSignature(postProcessRootSignature.Get());
-	commandList->SetPipelineState(sobelPipelineState.Get());
+	commandList->SetPipelineState(pipelineState["sobelPsoDesc"].Get());
 
 	auto handleForPostProcess = postProcessHandleSaved;
 	auto handleForPostProcessUav = postProcessHandleSaved;
@@ -176,7 +176,7 @@ void D3D12RHI::RHIPopulateCommandList()
 	commandList->OMSetRenderTargets(1, &currentBackBufferView, true, &depthStencilView);
 
 	commandList->SetGraphicsRootSignature(postProcessRootSignature.Get());
-	commandList->SetPipelineState(compositePipelineState.Get());
+	commandList->SetPipelineState(pipelineState["compositePsoDesc"].Get());
 	commandList->SetGraphicsRootDescriptorTable(0, handleForPostProcess);
 	commandList->SetGraphicsRootDescriptorTable(1, postProcessHandleSaved);
 
@@ -345,7 +345,7 @@ void D3D12RHI::RHICreateCommandObjects()
 	ThrowIfFailed(d3dDevice->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&commandQueue)));
 	ThrowIfFailed(d3dDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&commandAllocator)));
 	// Create the command list.
-	ThrowIfFailed(d3dDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator.Get(), basePassPipelineState.Get(), IID_PPV_ARGS(&commandList)));
+	ThrowIfFailed(d3dDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator.Get(), pipelineState["basePsoDesc"].Get(), IID_PPV_ARGS(&commandList)));
 }
 
 void D3D12RHI::RHICreateSwapChain(UINT bufferCount, Dataformat dFormat)
@@ -974,9 +974,6 @@ void D3D12RHI::RHISetVertexAndIndexBuffer()
 }
 void D3D12RHI::RHICreatePipeLineState()
 {
-	//第三个参数设置能够包含别的hlsl文件
-	shaders["MainShaderVS"] = d3dUtil::CompileShader(L"Shaders\\MainShader.hlsl", nullptr, "VS", "vs_5_1");
-	shaders["MainShaderPS"] = d3dUtil::CompileShader(L"Shaders\\MainShader.hlsl", nullptr, "PS", "ps_5_1");
 	//定义顶点的输入布局
 	D3D12_INPUT_ELEMENT_DESC inputElementDescs[] =
 	{
@@ -985,127 +982,54 @@ void D3D12RHI::RHICreatePipeLineState()
 		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 	};
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC basePassPsoDesc = {};
-	basePassPsoDesc.InputLayout = { inputElementDescs, _countof(inputElementDescs) };
-	basePassPsoDesc.pRootSignature = rootSignature.Get();
-	basePassPsoDesc.VS =
-	{
-		reinterpret_cast<BYTE*>(shaders["MainShaderVS"]->GetBufferPointer()),
-		shaders["MainShaderVS"]->GetBufferSize()
-	};
-	basePassPsoDesc.PS =
-	{
-		reinterpret_cast<BYTE*>(shaders["MainShaderPS"]->GetBufferPointer()),
-		shaders["MainShaderPS"]->GetBufferSize()
-	};
-	basePassPsoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-
-	//描述混和状态
-	basePassPsoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-	basePassPsoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);//深度模板状态
-	basePassPsoDesc.SampleMask = UINT_MAX;
-	//解释集合或外壳着色器输入图元，此处定义图元为三角形
-	basePassPsoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-	basePassPsoDesc.NumRenderTargets = 1;
-	basePassPsoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-	//描述资源的多重采样，此处设置为1即不进行多重采样
-	basePassPsoDesc.SampleDesc.Count = 1;
-
-	ThrowIfFailed(d3dDevice->CreateGraphicsPipelineState(&basePassPsoDesc, IID_PPV_ARGS(&basePassPipelineState)));
-
-	//D3D12PSODesc basePsoDesc(inputElementDescs, 3, rootSignature, shaders, "MainShaderVS", "MainShaderPS",
-	//	CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT), CD3DX12_BLEND_DESC(D3D12_DEFAULT), 
-	//	CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT),UINT_MAX, D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE, 
-	//	1, DXGI_FORMAT_R8G8B8A8_UNORM, 1);
-
-	//d3dDevice->CreateGraphicsPipelineState(&basePsoDesc.GetPSODesc(), IID_PPV_ARGS(&pipelineState["basePsoDesc"]));
-
-
-
-	// PSO for shadowmap.
+	//第三个参数设置能够包含别的hlsl文件
+	shaders["MainShaderVS"] = d3dUtil::CompileShader(L"Shaders\\MainShader.hlsl", nullptr, "VS", "vs_5_1");
+	shaders["MainShaderPS"] = d3dUtil::CompileShader(L"Shaders\\MainShader.hlsl", nullptr, "PS", "ps_5_1");
 	shaders["GenerateShadowVS"] = d3dUtil::CompileShader(L"Shaders\\GenerateShadow.hlsl", nullptr, "VS", "vs_5_1");
 	shaders["GenerateShadowPS"] = d3dUtil::CompileShader(L"Shaders\\GenerateShadow.hlsl", nullptr, "PS", "ps_5_1");
+	shaders["compositeVS"] = d3dUtil::CompileShader(L"Shaders\\Composite.hlsl", nullptr, "VS", "vs_5_1");
+	shaders["compositePS"] = d3dUtil::CompileShader(L"Shaders\\Composite.hlsl", nullptr, "PS", "ps_5_1");
+	shaders["sobelCS"] = d3dUtil::CompileShader(L"Shaders\\Sobel.hlsl", nullptr, "SobelCS", "cs_5_1");
 
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC shadowPassPsoDesc;
-	ZeroMemory(&shadowPassPsoDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
-	shadowPassPsoDesc.InputLayout = { inputElementDescs, _countof(inputElementDescs) };
-	shadowPassPsoDesc.pRootSignature = rootSignature.Get();
-	shadowPassPsoDesc.VS =
-	{
-		reinterpret_cast<BYTE*>(shaders["GenerateShadowVS"]->GetBufferPointer()),
-		shaders["GenerateShadowVS"]->GetBufferSize()
-	};
-	shadowPassPsoDesc.PS =
-	{
-		reinterpret_cast<BYTE*>(shaders["GenerateShadowPS"]->GetBufferPointer()),
-		shaders["GenerateShadowPS"]->GetBufferSize()
-	};
-	shadowPassPsoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-	shadowPassPsoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-	shadowPassPsoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-	shadowPassPsoDesc.SampleMask = UINT_MAX;
-	shadowPassPsoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-	shadowPassPsoDesc.NumRenderTargets = 1;
-	shadowPassPsoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-	shadowPassPsoDesc.SampleDesc.Count = 1;
-	shadowPassPsoDesc.SampleDesc.Quality = 0;
-	shadowPassPsoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
-	shadowPassPsoDesc.RasterizerState.DepthBias = 100000;
-	shadowPassPsoDesc.RasterizerState.DepthBiasClamp = 0.0f;
-	shadowPassPsoDesc.RasterizerState.SlopeScaledDepthBias = 1.0f;
-	shadowPassPsoDesc.pRootSignature = rootSignature.Get();
-	// Shadow map pass does not have a render target.
-	shadowPassPsoDesc.RTVFormats[0] = DXGI_FORMAT_UNKNOWN;
-	shadowPassPsoDesc.NumRenderTargets = 0;
+	//base pass pipeline state object desc
+	D3D12PSODesc basePsoDesc(inputElementDescs, _countof(inputElementDescs),
+		rootSignature, shaders, "MainShaderVS", "MainShaderPS",CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT), 
+		CD3DX12_BLEND_DESC(D3D12_DEFAULT),CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT), UINT_MAX,
+		D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE, 1, DXGI_FORMAT_R8G8B8A8_UNORM, 1);
+	d3dDevice->CreateGraphicsPipelineState(&basePsoDesc.GetPSODesc(), IID_PPV_ARGS(&pipelineState["basePsoDesc"]));
 
-	ThrowIfFailed(d3dDevice->CreateGraphicsPipelineState(&shadowPassPsoDesc, IID_PPV_ARGS(&shadowPassPipelineState)));
+	//shadow pass pipeline state object desc
+	CD3DX12_RASTERIZER_DESC rasterizerDesc = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+	rasterizerDesc.DepthBias = 100000;
+	rasterizerDesc.DepthBiasClamp = 0.0f;
+	rasterizerDesc.SlopeScaledDepthBias = 1.0f;
+	D3D12PSODesc shadowPsoDesc(inputElementDescs, _countof(inputElementDescs),
+		rootSignature, shaders, "GenerateShadowVS", "GenerateShadowPS", rasterizerDesc,
+		CD3DX12_BLEND_DESC(D3D12_DEFAULT), CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT), UINT_MAX,
+		D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE, 0, DXGI_FORMAT_R8G8B8A8_UNORM, 1, 0,
+		DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_UNKNOWN);
+	ThrowIfFailed(d3dDevice->CreateGraphicsPipelineState(&shadowPsoDesc.GetPSODesc(), IID_PPV_ARGS(&pipelineState["shadowPsoDesc"])));
 
+	//composite pipeline state object desc
+	CD3DX12_DEPTH_STENCIL_DESC depthStencilDesc = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+	depthStencilDesc.DepthEnable = false;
+	depthStencilDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+	depthStencilDesc.DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+	D3D12PSODesc compositePsoDesc(inputElementDescs, _countof(inputElementDescs),
+		postProcessRootSignature, shaders, "compositeVS", "compositePS", CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT),
+		CD3DX12_BLEND_DESC(D3D12_DEFAULT), depthStencilDesc, UINT_MAX, D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE, 1,
+		DXGI_FORMAT_R8G8B8A8_UNORM, 1, 0, DXGI_FORMAT_D24_UNORM_S8_UINT);
+	ThrowIfFailed(d3dDevice->CreateGraphicsPipelineState(&compositePsoDesc.GetPSODesc(), IID_PPV_ARGS(&pipelineState["compositePsoDesc"])));
 
-	shaders["compositeVS"] = d3dUtil::CompileShader(L"Shaders\\Composite.hlsl", nullptr, "VS", "vs_5_0");
-	shaders["compositePS"] = d3dUtil::CompileShader(L"Shaders\\Composite.hlsl", nullptr, "PS", "ps_5_0");
-	shaders["sobelCS"] = d3dUtil::CompileShader(L"Shaders\\Sobel.hlsl", nullptr, "SobelCS", "cs_5_0");
-	//
-	// PSO for compositing post process
-	//
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC compositePsoDesc;
-	ZeroMemory(&compositePsoDesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
-	compositePsoDesc.InputLayout = { inputElementDescs, _countof(inputElementDescs) };
-	compositePsoDesc.pRootSignature = rootSignature.Get();
-	compositePsoDesc.VS =
-	{
-		reinterpret_cast<BYTE*>(shaders["compositeVS"]->GetBufferPointer()),
-		shaders["compositeVS"]->GetBufferSize()
-	};
-	compositePsoDesc.PS =
-	{
-		reinterpret_cast<BYTE*>(shaders["compositePS"]->GetBufferPointer()),
-		shaders["compositePS"]->GetBufferSize()
-	};
-	compositePsoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-	compositePsoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-	compositePsoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-	compositePsoDesc.SampleMask = UINT_MAX;
-	compositePsoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-	compositePsoDesc.NumRenderTargets = 1;
-	compositePsoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-	compositePsoDesc.SampleDesc.Count = 1;
-	compositePsoDesc.SampleDesc.Quality = 0;
-	compositePsoDesc.DSVFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
-	compositePsoDesc.pRootSignature = postProcessRootSignature.Get();
-	compositePsoDesc.DepthStencilState.DepthEnable = false;
-	compositePsoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
-	compositePsoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS;
-	ThrowIfFailed(d3dDevice->CreateGraphicsPipelineState(&compositePsoDesc, IID_PPV_ARGS(&compositePipelineState)));
-
-	D3D12_COMPUTE_PIPELINE_STATE_DESC sobelPSO = {};
-	sobelPSO.pRootSignature = postProcessRootSignature.Get();
-	sobelPSO.CS =
+	D3D12_COMPUTE_PIPELINE_STATE_DESC sobelPsoDesc = {};
+	sobelPsoDesc.pRootSignature = postProcessRootSignature.Get();
+	sobelPsoDesc.CS =
 	{
 		reinterpret_cast<BYTE*>(shaders["sobelCS"]->GetBufferPointer()),
 		shaders["sobelCS"]->GetBufferSize()
 	};
-	sobelPSO.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
-	ThrowIfFailed(d3dDevice->CreateComputePipelineState(&sobelPSO, IID_PPV_ARGS(&sobelPipelineState)));
+	sobelPsoDesc.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
+	ThrowIfFailed(d3dDevice->CreateComputePipelineState(&sobelPsoDesc, IID_PPV_ARGS(&pipelineState["sobelPsoDesc"])));
 }
 
 void D3D12RHI::WaitForPreviousFrame()
