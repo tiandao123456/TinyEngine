@@ -47,10 +47,10 @@ public:
 	void WaitForPreviousFrame();
 	void CalculateCameraViewProj();
 	void CalculateLightViewProjTex();
-	void CreateRootSignature(UINT rootParamNums, CD3DX12_ROOT_PARAMETER slotRootParameter[], ComPtr<ID3D12RootSignature> rootSignatureParam, UINT flag);
-	ComPtr<ID3D12DescriptorHeap> RHICreateDescriptorHeap(HeapType heapType, UINT descriptorNums, UINT nodeMask = 0, HeapFlag heapFlag = HeapNone);
 	void RHICreateCommittedResource();
 	std::array<const CD3DX12_STATIC_SAMPLER_DESC, 7> GetStaticSamplers();
+	void RHICreateRootSignature(UINT rootParamNums, CD3DX12_ROOT_PARAMETER slotRootParameter[], ComPtr<ID3D12RootSignature> rootSignatureParam, UINT flag);
+	ComPtr<ID3D12DescriptorHeap> RHICreateDescriptorHeap(HeapType heapType, UINT descriptorNums, UINT nodeMask = 0, HeapFlag heapFlag = HeapNone);
 	void CreateDefaultHeapBuffer(ID3D12GraphicsCommandList* cmdList, const void* data, const int size, ComPtr<ID3D12Resource>& vertexBuffer);
 
 private:

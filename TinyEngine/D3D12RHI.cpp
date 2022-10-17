@@ -68,7 +68,6 @@ void D3D12RHI::RHIPopulateCommandList()
 	commandList->RSSetViewports(1, &baseViewport);
 	commandList->RSSetScissorRects(1, &baseScissorRect);
 
-
 	// 渲染到off-screen表面与base pass进行混合
 	// Change offscreen texture to be used as a a render target output.
 	auto resourceBarrierForPostProcess = CD3DX12_RESOURCE_BARRIER::Transition(offScreenResource.Get(),
@@ -153,6 +152,7 @@ void D3D12RHI::RHIPopulateCommandList()
 	commandList->SetComputeRootDescriptorTable(0, handleForPostProcess);
 	commandList->SetComputeRootDescriptorTable(2, handleForPostProcessUav);
 
+	//转变资源状态从读到能够进行无序访问
 	auto resourceFromReadToAccess = CD3DX12_RESOURCE_BARRIER::Transition(outputResource.Get(),
 		D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 	commandList->ResourceBarrier(1, &resourceFromReadToAccess);
@@ -561,7 +561,7 @@ std::array<const CD3DX12_STATIC_SAMPLER_DESC, 7> D3D12RHI::GetStaticSamplers()
 	};
 }
 
-void D3D12RHI::CreateRootSignature(UINT rootParamNums, CD3DX12_ROOT_PARAMETER slotRootParameter[], ComPtr<ID3D12RootSignature> rootSignatureParam, UINT flag)
+void D3D12RHI::RHICreateRootSignature(UINT rootParamNums, CD3DX12_ROOT_PARAMETER slotRootParameter[], ComPtr<ID3D12RootSignature> rootSignatureParam, UINT flag)
 {
 	auto staticSamplers = GetStaticSamplers();
 	// A root signature is an array of root parameters.
@@ -607,7 +607,7 @@ void D3D12RHI::RHICreatePostProcessRootDescriptorTable()
 	slotRootParameter[1].InitAsDescriptorTable(1, &desRange[1]);
 	slotRootParameter[2].InitAsDescriptorTable(1, &desRange[2]);
 
-	CreateRootSignature(3, slotRootParameter, postProcessRootSignature, 1);
+	RHICreateRootSignature(3, slotRootParameter, postProcessRootSignature, 1);
 
 }
 
@@ -635,7 +635,7 @@ void D3D12RHI::RHICreateRootDescriptorTable()
 	rootParameters[3].InitAsDescriptorTable(1, &ranges[3], D3D12_SHADER_VISIBILITY_ALL);
 	rootParameters[4].InitAsDescriptorTable(1, &ranges[4], D3D12_SHADER_VISIBILITY_ALL);
 
-	CreateRootSignature(5, rootParameters, rootSignature, 0);
+	RHICreateRootSignature(5, rootParameters, rootSignature, 0);
 }
 
 void D3D12RHI::LoadTexture()
@@ -720,7 +720,6 @@ void D3D12RHI::RHICreateConstBufferAndShaderResource()
 	{
 		cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
 		cbvSrvUavHeapHandleForGpu.Offset(1, cbvSrvUavDescriptorSize);
-
 		d3dDevice->CreateShaderResourceView(diffuseTexBrick.Get(), 
 			&shaderResDesc.GetShaderResDesc(D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING, diffuseTexBrick->GetDesc().Format, 0, -1, SRVTexture2D), cbvSrvUavHeapHandle);
 
@@ -766,6 +765,7 @@ void D3D12RHI::RHICreateConstBufferAndShaderResource()
 	d3dDevice->CreateShaderResourceView(offScreenResource.Get(),
 		&shaderResDesc.GetShaderResDesc(D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING, DXGI_FORMAT_R8G8B8A8_UNORM, 0, 1, SRVTexture2D), postProcessHandle);
 
+	//该render target用于承载soble之后的边缘检测图，之后与base pass进行融合
 	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(rtvHeap->GetCPUDescriptorHandleForHeapStart());
 	rtvHandle.Offset(2, rtvDescriptorSize);
 	d3dDevice->CreateRenderTargetView(offScreenResource.Get(), nullptr, rtvHandle);
@@ -812,7 +812,6 @@ void D3D12RHI::CreateDefaultHeapBuffer(ID3D12GraphicsCommandList* cmdList, const
 	cmdList->ResourceBarrier(1, &barrierFromDestToRead);
 	vertexBuffer = defaultBuffer;
 }
-
 
 void D3D12RHI::RHISetVertexAndIndexBuffer()
 {
