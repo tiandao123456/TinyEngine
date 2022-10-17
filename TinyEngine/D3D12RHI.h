@@ -1,13 +1,18 @@
 #pragma once
-#include "RHIBase.h"
-#include "Common/DxHelper.h"
-#include "JsonFileParse.h"
-#include "d3dUtil.h"
-#include "Win.h"
+
 #include <unordered_map>
 #include <d3d12.h>
 #include <array>
+
+#include "Win.h"
+#include "RHIBase.h"
+#include "d3dUtil.h"
+#include "Common/DxHelper.h"
+#include "JsonFileParse.h"
 #include "D3D12PSODesc.h"
+#include "D3D12SCDesc.h"
+#include "D3D12CCRes.h"
+#include "D3D12ShaderResDesc.h"
 
 #pragma comment(lib,"d3dcompiler.lib")
 #pragma comment(lib, "D3D12.lib")
@@ -24,9 +29,9 @@ public:
 	virtual void RHIStartDebug();
 	virtual void RHIEnumAdapter();
 	virtual void RHICreateCommandObjects();
-	virtual void RHICreateSwapChain(UINT bufferCount, Dataformat dFormat);
+	virtual void RHICreateSwapChain(UINT bufferCount, BufferUsageFormat bufferUsageFormat, SwapEffect swapEffect, UINT sampleDescCount, DataFormat dFormat);
 	virtual void RHICreateRenderTarget(UINT renderTargetNums);
-	virtual void RHICreateDepthStencil(Dataformat dFormat, UINT shadowMapWidth, UINT shadowMapHeight);
+	virtual void RHICreateDepthStencil(DataFormat dFormat, UINT shadowMapWidth, UINT shadowMapHeight);
 	virtual void RHICreateRootDescriptorTable();
 	virtual void RHICreateConstBufferAndShaderResource();
 	virtual void RHISetVertexAndIndexBuffer();
@@ -36,13 +41,15 @@ public:
 	virtual void RHIUpdate();
 	virtual void RHIRender();
 	virtual void RHIDrawSceneToShadow();
-
-	void postProcessRootDescriptorTable();
+	virtual void RHICreatePostProcessRootDescriptorTable();
 
 	void LoadTexture();
 	void WaitForPreviousFrame();
 	void CalculateCameraViewProj();
 	void CalculateLightViewProjTex();
+	void CreateRootSignature(UINT rootParamNums, CD3DX12_ROOT_PARAMETER slotRootParameter[], ComPtr<ID3D12RootSignature> rootSignatureParam, UINT flag);
+	ComPtr<ID3D12DescriptorHeap> RHICreateDescriptorHeap(HeapType heapType, UINT descriptorNums, UINT nodeMask = 0, HeapFlag heapFlag = HeapNone);
+	void RHICreateCommittedResource();
 	std::array<const CD3DX12_STATIC_SAMPLER_DESC, 7> GetStaticSamplers();
 	void CreateDefaultHeapBuffer(ID3D12GraphicsCommandList* cmdList, const void* data, const int size, ComPtr<ID3D12Resource>& vertexBuffer);
 

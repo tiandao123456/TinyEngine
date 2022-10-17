@@ -12,11 +12,12 @@ void Renderer::Init()
 	rhiBase->RHIStartDebug();
 	rhiBase->RHIEnumAdapter();
 	rhiBase->RHICreateCommandObjects();
-	rhiBase->RHICreateSwapChain(2, R8G8B8A8);
-	rhiBase->RHICreateRenderTarget(2);
 
+	rhiBase->RHICreateSwapChain(2, Output, FlipDiscard, 1, R8G8B8A8);
+	rhiBase->RHICreateRenderTarget(2);
 	rhiBase->RHICreateDepthStencil(D32, 8192, 8192);
 	rhiBase->RHICreateRootDescriptorTable();
+	rhiBase->RHICreatePostProcessRootDescriptorTable();
 	rhiBase->RHICreateConstBufferAndShaderResource();
 	rhiBase->RHISetVertexAndIndexBuffer();
 	rhiBase->RHICreatePipeLineState();

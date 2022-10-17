@@ -348,36 +348,61 @@ void D3D12RHI::RHICreateCommandObjects()
 	ThrowIfFailed(d3dDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator.Get(), pipelineState["basePsoDesc"].Get(), IID_PPV_ARGS(&commandList)));
 }
 
-void D3D12RHI::RHICreateSwapChain(UINT bufferCount, Dataformat dFormat)
+void D3D12RHI::RHICreateSwapChain(UINT bufferCount, BufferUsageFormat bufferUsageFormat, SwapEffect swapEffect, UINT sampleDescCount, DataFormat dFormat)
 {
-	DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
-	swapChainDesc.BufferCount = bufferCount;
-	swapChainDesc.Width = mClientWidth;
-	swapChainDesc.Height = mClientHeight;
-	swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-	swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-	swapChainDesc.SampleDesc.Count = 1;
-
-	switch(dFormat)
-	{
-	case R8G8B8A8:
-		swapChainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		break;
-	default:
-		break;
-	}
-
+	D3D12SCDesc scDesc(bufferCount, bufferUsageFormat, swapEffect, sampleDescCount, dFormat);
 	HWND mhMainWnd = Win::GetInstance().mhMainWnd;
 	ComPtr<IDXGISwapChain1> swapChain;
 	ThrowIfFailed(dxgiFactory->CreateSwapChainForHwnd(
 		commandQueue.Get(),// 交换链需要命令队列才能刷新，比如命令队列中一个指令指示交换链进行前后台缓冲的交换
-		mhMainWnd, &swapChainDesc, nullptr, nullptr, &swapChain));
+		mhMainWnd, &scDesc.GetSwapChainDesc(), nullptr, nullptr, &swapChain));
 
 	//该窗口将不会响应alt-enter序列（按键组合）
 	ThrowIfFailed(dxgiFactory->MakeWindowAssociation(mhMainWnd, DXGI_MWA_NO_ALT_ENTER));
 
 	ThrowIfFailed(swapChain.As(&dxgiSwapChain));
 	frameIndex = dxgiSwapChain->GetCurrentBackBufferIndex();
+}
+
+ComPtr<ID3D12DescriptorHeap> D3D12RHI::RHICreateDescriptorHeap(HeapType heapType, UINT descriptorNums, UINT nodeMask, HeapFlag heapFlag)
+{
+	D3D12_DESCRIPTOR_HEAP_DESC heapDesc;
+	ZeroMemory(&heapDesc, sizeof(D3D12_DESCRIPTOR_HEAP_DESC));
+
+	switch (heapType)
+	{
+	case RTV:
+		heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+		rtvDescriptorSize = d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+		break;
+	case DSV:
+		heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+		dsvDescriptorSize = d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+		break;
+	case CBVSRVUAV:
+		heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+		cbvSrvUavDescriptorSize = d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		break;
+	default:
+		break;
+	}
+	switch (heapFlag)
+	{
+	case HeapNone:
+		heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+		break;
+	case HeapVisible:
+		heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+		break;
+	default:
+		break;
+	}
+	heapDesc.NumDescriptors = descriptorNums;
+	heapDesc.NodeMask = nodeMask;
+
+	ComPtr<ID3D12DescriptorHeap> heap;
+	ThrowIfFailed(d3dDevice->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&heap)));
+	return heap;
 }
 
 //创建rtv
@@ -387,14 +412,7 @@ void D3D12RHI::RHICreateRenderTarget(UINT renderTargetNums)
 	// heaps则是存放descriptor的一片内存
 	// 创建渲染目标视图（渲染目标视图是渲染管线的最终目标输出的位置，因为渲染管线最终不会输出到屏幕上，会先输出到渲染目标视图上）
 	// 最后屏幕获取渲染目标视图的内容并呈现
-	// Describe and create a render target view (RTV) descriptor heap.
-	D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
-	rtvHeapDesc.NumDescriptors = renderTargetNums + 1;
-	rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-	rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-	ThrowIfFailed(d3dDevice->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&rtvHeap)));
-	// 计算RTV描述符的大小
-	rtvDescriptorSize = d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+	rtvHeap = RHICreateDescriptorHeap(RTV, renderTargetNums + 1);
 
 	//获得渲染目标视图描述符堆的起始位置
 	//		| RTV Descriptor Heap |
@@ -415,124 +433,60 @@ void D3D12RHI::RHICreateRenderTarget(UINT renderTargetNums)
 	}
 }
 
-void D3D12RHI::RHICreateDepthStencil(Dataformat dFormat, UINT shadowMapWidth, UINT shadowMapHeight)
+void D3D12RHI::RHICreateDepthStencil(DataFormat dFormat, UINT shadowMapWidth, UINT shadowMapHeight)
 {
 	//创建深度模板堆
 	//深度/模板堆大小为2，因为有一个shadowMap
-	D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
-	dsvHeapDesc.NumDescriptors = 2;
-	dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-	dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-	ThrowIfFailed(d3dDevice->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&dsvHeap)));
+	dsvHeap = RHICreateDescriptorHeap(DSV, 2);
 	//不开启深度模板缓冲的话，后绘的物体会挡住先绘制的物体，而不是根据实际的深度绘制
 
-	D3D12_DEPTH_STENCIL_VIEW_DESC depthStencilDesc = {};
-	depthStencilDesc.Format = DXGI_FORMAT_D32_FLOAT;
-	depthStencilDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-	depthStencilDesc.Flags = D3D12_DSV_FLAG_NONE;
-
-	D3D12_CLEAR_VALUE depthOptimizedClearValue = {};
-	depthOptimizedClearValue.Format = DXGI_FORMAT_D32_FLOAT;
-	depthOptimizedClearValue.DepthStencil.Depth = 1.0f;
-	depthOptimizedClearValue.DepthStencil.Stencil = 0;
-
 	CD3DX12_HEAP_PROPERTIES heapProperties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-	CD3DX12_RESOURCE_DESC tex2D = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_D32_FLOAT, mClientWidth, mClientHeight, 1, 0, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL);
 
+	D3D12CCRes createCommitedRes;
+	D3D12_DEPTH_STENCIL_VIEW_DESC depthStencilDesc = createCommitedRes.GetDepthStencilViewDesc(D32, Texture2D, None);
+	D3D12_CLEAR_VALUE depthOptimizedClearValue = createCommitedRes.GetClearValue(D32, 1.0, 0);
+	D3D12_RESOURCE_DESC resDesc = createCommitedRes.GetResDesc(ResTexture2D, 0, mClientWidth, mClientHeight, 1, 0, D32, 1, 0, LayoutUnknown, FlagAllowDepthStencil);
 	ThrowIfFailed(d3dDevice->CreateCommittedResource(
 		&heapProperties,
 		D3D12_HEAP_FLAG_NONE,
-		&tex2D,
+		&resDesc,
 		D3D12_RESOURCE_STATE_DEPTH_WRITE,
 		&depthOptimizedClearValue,
 		IID_PPV_ARGS(&depthStencilBuffer)));
-
 	d3dDevice->CreateDepthStencilView(depthStencilBuffer.Get(), &depthStencilDesc, dsvHeap->GetCPUDescriptorHandleForHeapStart());
 
-	//shadowMap相关资源
+	//shadowMap相关资源,将shadow map输出到dsv上面
 	shadowMapViewport = { 0.0f, 0.0f, (float)shadowMapWidth, (float)shadowMapHeight, 0.0f, 1.0f };
 	shadowMapScissorRect = { 0, 0, (int)shadowMapWidth, (int)shadowMapHeight };
-
-	D3D12_RESOURCE_DESC shadowMapResourceDesc;
-	ZeroMemory(&shadowMapResourceDesc, sizeof(D3D12_RESOURCE_DESC));
-	shadowMapResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-	shadowMapResourceDesc.Alignment = 0;
-	shadowMapResourceDesc.Width = shadowMapWidth;
-	shadowMapResourceDesc.Height = shadowMapHeight;
-	shadowMapResourceDesc.DepthOrArraySize = 1;
-	shadowMapResourceDesc.MipLevels = 1;
-	shadowMapResourceDesc.Format = DXGI_FORMAT_R24G8_TYPELESS;
-	shadowMapResourceDesc.SampleDesc.Count = 1;
-	shadowMapResourceDesc.SampleDesc.Quality = 0;
-	shadowMapResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-	shadowMapResourceDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
-
-	D3D12_CLEAR_VALUE optClear;
-	optClear.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
-	optClear.DepthStencil.Depth = 1.0f;
-	optClear.DepthStencil.Stencil = 0;
-
+	depthStencilDesc = createCommitedRes.GetDepthStencilViewDesc(D24S8, Texture2D, None);
+	depthOptimizedClearValue = createCommitedRes.GetClearValue(D24S8, 1.0, 0);
+	D3D12_RESOURCE_DESC shadowResDesc = createCommitedRes.GetResDesc(ResTexture2D, 0, shadowMapWidth, shadowMapHeight, 1, 1, R24G8, 1, 0, LayoutUnknown, FlagAllowDepthStencil);
 	ThrowIfFailed(d3dDevice->CreateCommittedResource(
 		&heapProperties,
 		D3D12_HEAP_FLAG_NONE,
-		&shadowMapResourceDesc,
+		&shadowResDesc,
 		D3D12_RESOURCE_STATE_GENERIC_READ,
-		&optClear,
+		&depthOptimizedClearValue,
 		IID_PPV_ARGS(&shadowMapResource)));
-
-	// 将shadow map渲染到dsv上
-	D3D12_DEPTH_STENCIL_VIEW_DESC shadowMapDesc;
-	shadowMapDesc.Flags = D3D12_DSV_FLAG_NONE;
-	shadowMapDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-	shadowMapDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
-	shadowMapDesc.Texture2D.MipSlice = 0;
-
 	dsvHeapHandle = dsvHeap->GetCPUDescriptorHandleForHeapStart();
 	shadowDsvHeapHandle = dsvHeapHandle;
-	dsvDescriptorSize = d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
 	shadowDsvHeapHandle.Offset(1, dsvDescriptorSize);
-	d3dDevice->CreateDepthStencilView(shadowMapResource.Get(), &shadowMapDesc, shadowDsvHeapHandle);
+	d3dDevice->CreateDepthStencilView(shadowMapResource.Get(), &depthStencilDesc, shadowDsvHeapHandle);
 
-	D3D12_RESOURCE_DESC texDesc;
-	ZeroMemory(&texDesc, sizeof(D3D12_RESOURCE_DESC));
-	texDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-	texDesc.Alignment = 0;
-	texDesc.Width = mClientWidth;
-	texDesc.Height = mClientHeight;
-	texDesc.DepthOrArraySize = 1;
-	texDesc.MipLevels = 1;
-	texDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-	texDesc.SampleDesc.Count = 1;
-	texDesc.SampleDesc.Quality = 0;
-	texDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-	texDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-
+	D3D12_RESOURCE_DESC outputResDesc = createCommitedRes.GetResDesc(ResTexture2D, 0, mClientWidth, mClientHeight, 1, 1, R8G8B8A8, 1, 0, LayoutUnknown, FlagAllowUnorderedAccess);
 	ThrowIfFailed(d3dDevice->CreateCommittedResource(
 		&heapProperties,
 		D3D12_HEAP_FLAG_NONE,
-		&texDesc,
+		&outputResDesc,
 		D3D12_RESOURCE_STATE_GENERIC_READ,
 		nullptr,
 		IID_PPV_ARGS(&outputResource)));
 
-	D3D12_RESOURCE_DESC offScreenTexDesc;
-	ZeroMemory(&texDesc, sizeof(D3D12_RESOURCE_DESC));
-	offScreenTexDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-	offScreenTexDesc.Alignment = 0;
-	offScreenTexDesc.Width = mClientWidth;
-	offScreenTexDesc.Height = mClientHeight;
-	offScreenTexDesc.DepthOrArraySize = 1;
-	offScreenTexDesc.MipLevels = 1;
-	offScreenTexDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-	offScreenTexDesc.SampleDesc.Count = 1;
-	offScreenTexDesc.SampleDesc.Quality = 0;
-	offScreenTexDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-	offScreenTexDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
-
+	D3D12_RESOURCE_DESC offScreenResDesc = createCommitedRes.GetResDesc(ResTexture2D, 0, mClientWidth, mClientHeight, 1, 1, R8G8B8A8, 1, 0, LayoutUnknown, FlagAllowRenderTarget);
 	ThrowIfFailed(d3dDevice->CreateCommittedResource(
 		&heapProperties,
 		D3D12_HEAP_FLAG_NONE,
-		&offScreenTexDesc,
+		&offScreenResDesc,
 		D3D12_RESOURCE_STATE_GENERIC_READ,
 		nullptr,
 		IID_PPV_ARGS(&offScreenResource)));
@@ -541,8 +495,7 @@ void D3D12RHI::RHICreateDepthStencil(Dataformat dFormat, UINT shadowMapWidth, UI
 std::array<const CD3DX12_STATIC_SAMPLER_DESC, 7> D3D12RHI::GetStaticSamplers()
 {
 	// Applications usually only need a handful of samplers.  So just define them all up front
-		// and keep them available as part of the root signature.  
-
+	// and keep them available as part of the root signature.  
 	const CD3DX12_STATIC_SAMPLER_DESC pointWrap(
 		0, // shaderRegister
 		D3D12_FILTER_MIN_MAG_MIP_POINT, // filter
@@ -608,27 +561,11 @@ std::array<const CD3DX12_STATIC_SAMPLER_DESC, 7> D3D12RHI::GetStaticSamplers()
 	};
 }
 
-void D3D12RHI::postProcessRootDescriptorTable()
+void D3D12RHI::CreateRootSignature(UINT rootParamNums, CD3DX12_ROOT_PARAMETER slotRootParameter[], ComPtr<ID3D12RootSignature> rootSignatureParam, UINT flag)
 {
-	CD3DX12_DESCRIPTOR_RANGE srvTable0;
-	srvTable0.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
-	CD3DX12_DESCRIPTOR_RANGE srvTable1;
-	srvTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
-	CD3DX12_DESCRIPTOR_RANGE uavTable0;
-	uavTable0.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
-
-	// Root parameter can be a table, root descriptor or root constants.
-	CD3DX12_ROOT_PARAMETER slotRootParameter[3];
-
-	// Perfomance TIP: Order from most frequent to least frequent.
-	slotRootParameter[0].InitAsDescriptorTable(1, &srvTable0);
-	slotRootParameter[1].InitAsDescriptorTable(1, &srvTable1);
-	slotRootParameter[2].InitAsDescriptorTable(1, &uavTable0);
-
 	auto staticSamplers = GetStaticSamplers();
-
 	// A root signature is an array of root parameters.
-	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(3, slotRootParameter,
+	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(rootParamNums, slotRootParameter,
 		(UINT)staticSamplers.size(), staticSamplers.data(),
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
@@ -648,7 +585,30 @@ void D3D12RHI::postProcessRootDescriptorTable()
 		0,
 		serializedRootSig->GetBufferPointer(),
 		serializedRootSig->GetBufferSize(),
-		IID_PPV_ARGS(postProcessRootSignature.GetAddressOf())));
+		IID_PPV_ARGS(rootSignatureParam.GetAddressOf())));
+
+	if (flag)
+		postProcessRootSignature = rootSignatureParam;
+	else
+		rootSignature = rootSignatureParam;
+}
+
+void D3D12RHI::RHICreatePostProcessRootDescriptorTable()
+{
+	CD3DX12_DESCRIPTOR_RANGE desRange[3];
+	desRange[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+	desRange[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+	desRange[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
+
+	// Root parameter can be a table, root descriptor or root constants.
+	CD3DX12_ROOT_PARAMETER slotRootParameter[3];
+	// Perfomance TIP: Order from most frequent to least frequent.
+	slotRootParameter[0].InitAsDescriptorTable(1, &desRange[0]);
+	slotRootParameter[1].InitAsDescriptorTable(1, &desRange[1]);
+	slotRootParameter[2].InitAsDescriptorTable(1, &desRange[2]);
+
+	CreateRootSignature(3, slotRootParameter, postProcessRootSignature, 1);
+
 }
 
 //描述符表与描述符堆的关系：描述符表实际上是描述符堆的子范围
@@ -656,22 +616,6 @@ void D3D12RHI::postProcessRootDescriptorTable()
 //然后cbv同样也可以放到描述符表中，也可以不放直接传输到shader中
 void D3D12RHI::RHICreateRootDescriptorTable()
 {
-	//根据场景中的物体计算所需要的cbv与srv数量
-	const auto &staticMeshActor = SceneManage::GetInstance().GetStaticMeshActor();
-	for (auto iter = staticMeshActor.begin(); iter != staticMeshActor.end(); iter++)
-	{
-		//cbv的数量
-		cbvNums += iter->second.worldMatrix.size();
-		srvNums += iter->second.worldMatrix.size() * 2;
-	}
-	//加上shadow map
-	srvNums += 1;
-
-	D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData = {};
-	featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
-	if (FAILED(d3dDevice->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData))))
-		featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
-
 	CD3DX12_DESCRIPTOR_RANGE ranges[5];
 	//world矩阵全部绑定在b0寄存器上
 	ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0);
@@ -690,33 +634,8 @@ void D3D12RHI::RHICreateRootDescriptorTable()
 	rootParameters[2].InitAsDescriptorTable(1, &ranges[2], D3D12_SHADER_VISIBILITY_ALL);
 	rootParameters[3].InitAsDescriptorTable(1, &ranges[3], D3D12_SHADER_VISIBILITY_ALL);
 	rootParameters[4].InitAsDescriptorTable(1, &ranges[4], D3D12_SHADER_VISIBILITY_ALL);
-	//采样器描述
-	auto staticSamplers = GetStaticSamplers();
 
-	// A root signature is an array of root parameters.
-	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(5, rootParameters,
-		(UINT)staticSamplers.size(), staticSamplers.data(),
-		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
-
-	// create a root signature with a single slot which points to a descriptor range consisting of a single constant buffer
-	ComPtr<ID3DBlob> serializedRootSig = nullptr;
-	ComPtr<ID3DBlob> errorBlob = nullptr;
-	HRESULT hr = D3D12SerializeRootSignature(&rootSigDesc, D3D_ROOT_SIGNATURE_VERSION_1,
-		serializedRootSig.GetAddressOf(), errorBlob.GetAddressOf());
-
-	if (errorBlob != nullptr)
-	{
-		::OutputDebugStringA((char*)errorBlob->GetBufferPointer());
-	}
-	ThrowIfFailed(hr);
-
-	ThrowIfFailed(d3dDevice->CreateRootSignature(
-		0,
-		serializedRootSig->GetBufferPointer(),
-		serializedRootSig->GetBufferSize(),
-		IID_PPV_ARGS(rootSignature.GetAddressOf())));
-
-	postProcessRootDescriptorTable();
+	CreateRootSignature(5, rootParameters, rootSignature, 0);
 }
 
 void D3D12RHI::LoadTexture()
@@ -759,19 +678,23 @@ void D3D12RHI::LoadTexture()
 
 void D3D12RHI::RHICreateConstBufferAndShaderResource()
 {
-	// NumDescripters为1的含义为该常量缓冲视图描述符堆能够绑定到渲染管线上
-	D3D12_DESCRIPTOR_HEAP_DESC cbvSrvUavHeapDesc;
+	//根据场景中的物体计算所需要的cbv与srv数量
+	const auto& staticMeshActor = SceneManage::GetInstance().GetStaticMeshActor();
+	for (auto iter = staticMeshActor.begin(); iter != staticMeshActor.end(); iter++)
+	{
+		//cbv的数量
+		cbvNums += iter->second.worldMatrix.size();
+		srvNums += iter->second.worldMatrix.size() * 2;
+	}
+	//加上shadow map
+	srvNums += 1;
+
 	// 描述符堆中的cbv、srv、uav总数
 	// 1为一个常量结构，3为后处理边缘检测需要的资源
-	cbvSrvUavHeapDesc.NumDescriptors = cbvNums + srvNums + 1 + 3;
-	cbvSrvUavHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	cbvSrvUavHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	cbvSrvUavHeapDesc.NodeMask = 0;
-	ThrowIfFailed(d3dDevice->CreateDescriptorHeap(&cbvSrvUavHeapDesc, IID_PPV_ARGS(&cbvSrvUavHeap)));
+	cbvSrvUavHeap = RHICreateDescriptorHeap(CBVSRVUAV, cbvNums + srvNums + 1 + 3, 0, HeapVisible);
 
 	worldMatrixBuffer = std::make_unique<UploadHeapConstantBuffer<WorldMatrix>>(d3dDevice.Get(), cbvNums);
 	constMatrixBuffer = std::make_unique<UploadHeapConstantBuffer<ConstMatrix>>(d3dDevice.Get(), 1);
-	cbvSrvUavDescriptorSize = d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	cbvSrvUavHeapHandle = cbvSrvUavHeap->GetCPUDescriptorHandleForHeapStart();
 	cbvSrvUavHeapHandleForGpu = cbvSrvUavHeap->GetGPUDescriptorHandleForHeapStart();
 
@@ -791,65 +714,45 @@ void D3D12RHI::RHICreateConstBufferAndShaderResource()
 	auto normalTexBrick = textures["brickNormal"]->resource;
 	auto normalTexTile = textures["tileNormal"]->resource;
 
+	D3D12ShaderResDesc shaderResDesc;
 	//创建多个sr的描述符
 	for (auto i = 0; i < (srvNums - 1) / 4; i++)
 	{
 		cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
 		cbvSrvUavHeapHandleForGpu.Offset(1, cbvSrvUavDescriptorSize);
-		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		srvDesc.Format = diffuseTexBrick->GetDesc().Format;
-		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-		srvDesc.Texture2D.MostDetailedMip = 0;
-		srvDesc.Texture2D.MipLevels = -1;
-		d3dDevice->CreateShaderResourceView(diffuseTexBrick.Get(), &srvDesc, cbvSrvUavHeapHandle);
+
+		d3dDevice->CreateShaderResourceView(diffuseTexBrick.Get(), 
+			&shaderResDesc.GetShaderResDesc(D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING, diffuseTexBrick->GetDesc().Format, 0, -1, SRVTexture2D), cbvSrvUavHeapHandle);
 
 		cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
 		cbvSrvUavHeapHandleForGpu.Offset(1, cbvSrvUavDescriptorSize);
-		srvDesc.Format = normalTexBrick->GetDesc().Format;
-		d3dDevice->CreateShaderResourceView(normalTexBrick.Get(), &srvDesc, cbvSrvUavHeapHandle);
+		d3dDevice->CreateShaderResourceView(normalTexBrick.Get(),
+			&shaderResDesc.GetShaderResDesc(D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING, normalTexBrick->GetDesc().Format, 0, -1, SRVTexture2D), cbvSrvUavHeapHandle);
 
 		cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
 		cbvSrvUavHeapHandleForGpu.Offset(1, cbvSrvUavDescriptorSize);
-		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc1 = {};
-		srvDesc1.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		srvDesc1.Format = diffuseTexTile->GetDesc().Format;
-		srvDesc1.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-		srvDesc1.Texture2D.MostDetailedMip = 0;
-		srvDesc1.Texture2D.MipLevels = -1;
-		d3dDevice->CreateShaderResourceView(diffuseTexTile.Get(), &srvDesc1, cbvSrvUavHeapHandle);
+		d3dDevice->CreateShaderResourceView(diffuseTexTile.Get(),
+			&shaderResDesc.GetShaderResDesc(D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING, diffuseTexTile->GetDesc().Format, 0, -1, SRVTexture2D), cbvSrvUavHeapHandle);
 
 		cbvSrvUavHeapHandle.Offset(1, cbvSrvUavDescriptorSize);
 		cbvSrvUavHeapHandleForGpu.Offset(1, cbvSrvUavDescriptorSize);
-		srvDesc1.Format = normalTexTile->GetDesc().Format;
-		d3dDevice->CreateShaderResourceView(normalTexTile.Get(), &srvDesc1, cbvSrvUavHeapHandle);
+		d3dDevice->CreateShaderResourceView(normalTexTile.Get(),
+			&shaderResDesc.GetShaderResDesc(D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING, normalTexTile->GetDesc().Format, 0, -1, SRVTexture2D), cbvSrvUavHeapHandle);
 	}
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE shadowMapHandle = cbvSrvUavHeapHandle;
 	shadowMapHandle.Offset(1, cbvSrvUavDescriptorSize);
 	cbvSrvUavHeapHandleForGpu.Offset(1, cbvSrvUavDescriptorSize);
 
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc.Format = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
-	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-	srvDesc.Texture2D.MostDetailedMip = 0;
-	srvDesc.Texture2D.MipLevels = 1;
-	srvDesc.Texture2D.ResourceMinLODClamp = 0.0f;
-	srvDesc.Texture2D.PlaneSlice = 0;
-	d3dDevice->CreateShaderResourceView(shadowMapResource.Get(), &srvDesc, shadowMapHandle);
+	d3dDevice->CreateShaderResourceView(shadowMapResource.Get(),
+		&shaderResDesc.GetShaderResDesc(D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING, DXGI_FORMAT_R24_UNORM_X8_TYPELESS, 0, 1, SRVTexture2D), shadowMapHandle);
 
 	auto postProcessHandle = shadowMapHandle;
 	postProcessHandle.Offset(1, cbvSrvUavDescriptorSize);
 	cbvSrvUavHeapHandleForGpu.Offset(1, cbvSrvUavDescriptorSize);
 	postProcessHandleSaved = cbvSrvUavHeapHandleForGpu;
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc1 = {};
-	srvDesc1.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc1.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-	srvDesc1.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-	srvDesc1.Texture2D.MostDetailedMip = 0;
-	srvDesc1.Texture2D.MipLevels = 1;
-	d3dDevice->CreateShaderResourceView(outputResource.Get(), &srvDesc1, postProcessHandle);
+	d3dDevice->CreateShaderResourceView(outputResource.Get(),
+		&shaderResDesc.GetShaderResDesc(D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING, DXGI_FORMAT_R8G8B8A8_UNORM, 0, 1, SRVTexture2D), postProcessHandle);
 
 	postProcessHandle.Offset(1, cbvSrvUavDescriptorSize);
 	D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
@@ -859,15 +762,9 @@ void D3D12RHI::RHICreateConstBufferAndShaderResource()
 	d3dDevice->CreateUnorderedAccessView(outputResource.Get(), nullptr, &uavDesc, postProcessHandle);
 
 	//render target的资源
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc2 = {};
-	srvDesc2.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc2.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-	srvDesc2.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-	srvDesc2.Texture2D.MostDetailedMip = 0;
-	srvDesc2.Texture2D.MipLevels = 1;
-
 	postProcessHandle.Offset(1, cbvSrvUavDescriptorSize);
-	d3dDevice->CreateShaderResourceView(offScreenResource.Get(), &srvDesc2, postProcessHandle);
+	d3dDevice->CreateShaderResourceView(offScreenResource.Get(),
+		&shaderResDesc.GetShaderResDesc(D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING, DXGI_FORMAT_R8G8B8A8_UNORM, 0, 1, SRVTexture2D), postProcessHandle);
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(rtvHeap->GetCPUDescriptorHandleForHeapStart());
 	rtvHandle.Offset(2, rtvDescriptorSize);
@@ -915,6 +812,7 @@ void D3D12RHI::CreateDefaultHeapBuffer(ID3D12GraphicsCommandList* cmdList, const
 	cmdList->ResourceBarrier(1, &barrierFromDestToRead);
 	vertexBuffer = defaultBuffer;
 }
+
 
 void D3D12RHI::RHISetVertexAndIndexBuffer()
 {
