@@ -5,9 +5,9 @@
 Texture2D gInput            : register(t0);
 RWTexture2D<float4> gOutput : register(u0);
 
-
 // Approximates luminance ("brightness") from an RGB value.  These weights are derived from
 // experiment based on eye sensitivity to different wavelengths of light.
+// rgb的贡献值不一样，所以需要乘以权重
 float CalcLuminance(float3 color)
 {
     return dot(color, float3(0.299f, 0.587f, 0.114f));
@@ -27,16 +27,22 @@ void SobelCS(int3 dispatchThreadID : SV_DispatchThreadID)
 		}
 	}
 
-	// For each color channel, estimate partial x derivative using Sobel scheme.
+	// 利用sobel算子计算近似偏导数
+	// -1  0  1
+	// -2  0  2
+	// -1  0  1
+	// 即x方向上的变化率，而在图像的边缘区域往往有最大的变化率
 	float4 Gx = -1.0f*c[0][0] - 2.0f*c[1][0] - 1.0f*c[2][0] + 1.0f*c[0][2] + 2.0f*c[1][2] + 1.0f*c[2][2];
 
 	// For each color channel, estimate partial y derivative using Sobel scheme.
 	float4 Gy = -1.0f*c[2][0] - 2.0f*c[2][1] - 1.0f*c[2][1] + 1.0f*c[0][0] + 2.0f*c[0][1] + 1.0f*c[0][2];
 
 	// Gradient is (Gx, Gy).  For each color channel, compute magnitude to get maximum rate of change.
+	// 所以对于某点而言其在该点的变化率（梯度）即为（Gx,Gy）
 	float4 mag = sqrt(Gx*Gx + Gy*Gy);
 
 	// Make edges black, and nonedges white.
+	// 二值化为0 or 1
 	mag = 1.0f - saturate(CalcLuminance(mag.rgb));
 
 	gOutput[dispatchThreadID.xy] = mag;

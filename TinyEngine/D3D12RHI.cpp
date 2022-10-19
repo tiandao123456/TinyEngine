@@ -11,9 +11,11 @@ void D3D12RHI::RHIDrawSceneToShadow()
 	CD3DX12_GPU_DESCRIPTOR_HANDLE cbvSrvUavHeapHandle(cbvSrvUavHeap->GetGPUDescriptorHandleForHeapStart());
 	CD3DX12_GPU_DESCRIPTOR_HANDLE cbvSrvUavHeapHandleCopy = cbvSrvUavHeapHandle;
 	CD3DX12_GPU_DESCRIPTOR_HANDLE cbvSrvUavHeapHandleCopyAgain = cbvSrvUavHeapHandle;
+
+	// 找到shadow map对应的srv设置其根签名表对应的参数
 	for (auto i = 0; i < cbvNums + srvNums; i++)
 		cbvSrvUavHeapHandle.Offset(cbvSrvUavDescriptorSize);
-	//设置根table第5号参数（从0开始）
+	// 设置根table第5号参数（从0开始）
 	commandList->SetGraphicsRootDescriptorTable(4, cbvSrvUavHeapHandle);
 	commandList->RSSetViewports(1, &shadowMapViewport);
 	commandList->RSSetScissorRects(1, &shadowMapScissorRect);
@@ -25,6 +27,7 @@ void D3D12RHI::RHIDrawSceneToShadow()
 	// Clear the back buffer and depth buffer.
 	commandList->ClearDepthStencilView(shadowDsvHeapHandle,
 		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
+	// 深度图将渲染到shadow map上，前两个参数就代表该深度模板缓冲区不绑定到输出合并阶段
 	commandList->OMSetRenderTargets(0, nullptr, false, &shadowDsvHeapHandle);
 
 	commandList->SetPipelineState(pipelineState["shadowPsoDesc"].Get());
@@ -50,7 +53,7 @@ void D3D12RHI::RHIDrawSceneToShadow()
 		//第一个参数表示根签名中的数组下标，0表示为根签名的第一个元素
 		//根签名中的第一个元素对应着多个CBV所以需要偏移
 		commandList->SetGraphicsRootDescriptorTable(0, cbvSrvUavHeapHandleCopyAgain);
-		// 绘制一个实例，第一个参数为索引数量，第三个四个参数分别为索引和顶点在容器中的对应下标位置
+		//绘制一个实例，第一个参数为索引数量，第三个四个参数分别为索引和顶点在容器中的对应下标位置
 		commandList->DrawIndexedInstanced((UINT)staticMeshIndicesNums[i], 1, recordIndexStartPosition[i], recondVertexStartPosition[i], 0);
 	}
 	auto resourceFromWriteToRead = CD3DX12_RESOURCE_BARRIER::Transition(shadowMapResource.Get(),
@@ -63,52 +66,36 @@ void D3D12RHI::RHIPopulateCommandList()
 	ThrowIfFailed(commandAllocator->Reset());
 	ThrowIfFailed(commandList->Reset(commandAllocator.Get(), pipelineState["basePsoDesc"].Get()));
 
+	//将场景的深度信息渲染到shadow map上，之后将这个shadow map作为srv使用
 	RHIDrawSceneToShadow();
+
 	//绑定视口到渲染管线的光栅化阶段
 	commandList->RSSetViewports(1, &baseViewport);
 	commandList->RSSetScissorRects(1, &baseScissorRect);
-
-	// 渲染到off-screen表面与base pass进行混合
-	// Change offscreen texture to be used as a a render target output.
+	//资源状态改变，从Read to RenderTarget
 	auto resourceBarrierForPostProcess = CD3DX12_RESOURCE_BARRIER::Transition(offScreenResource.Get(),
 		D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	commandList->ResourceBarrier(1, &resourceBarrierForPostProcess);
 
+	//输出到离屏纹理上
 	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandleForPostProcess(rtvHeap->GetCPUDescriptorHandleForHeapStart());
 	rtvHandleForPostProcess.Offset(2, rtvDescriptorSize);
-	// Clear the back buffer and depth buffer.
-	DirectX::XMFLOAT4 fogColor = { 0.7f, 0.7f, 0.7f, 1.0f };
-	commandList->ClearRenderTargetView(rtvHandleForPostProcess, (float*)&fogColor, 0, nullptr);
+	const float clearColor[] = { 0.690196097f, 0.768627524f, 0.870588303f, 1.000000000f };
+	commandList->ClearRenderTargetView(rtvHandleForPostProcess, (float*)&clearColor, 0, nullptr);
 	D3D12_CPU_DESCRIPTOR_HANDLE depthStencilView = dsvHeap->GetCPUDescriptorHandleForHeapStart();
 	commandList->ClearDepthStencilView(depthStencilView, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
-	// Specify the buffers we are going to render to.
 	commandList->OMSetRenderTargets(1, &rtvHandleForPostProcess, true, &depthStencilView);
-
-	//// 表明后台缓冲将被使用作为渲染目标
-	//CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(rtvHeap->GetCPUDescriptorHandleForHeapStart(), frameIndex, rtvDescriptorSize);
-	//CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle(dsvHeap->GetCPUDescriptorHandleForHeapStart());
-	//commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, &dsvHandle);
-
-	//// Record commands.
-	//const float clearColor[] = { 0.690196097f, 0.768627524f, 0.870588303f, 1.000000000f };
-	//commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
-	//commandList->ClearDepthStencilView(dsvHeap->GetCPUDescriptorHandleForHeapStart(), D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
-	//auto resourceFromPresentToTarget = CD3DX12_RESOURCE_BARRIER::Transition(renderTargets[frameIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	
 	// 通知驱动程序它需要同步对资源的多次访问 
 	// 用资源屏障来完成同步，资源屏障即进行资源的状态转换
 	// GPU上某个ALU对该资源可能是只读操作，某个ALU可能是只写操作，使用资源屏障就可以给资源一个状态
 	// 当资源变成只读状态时，表明某些ALU可以进行对资源进行操作了，只写同理
-	// commandList->ResourceBarrier(1, &resourceFromPresentToTarget);
+
+	// base pass
 	commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
 	commandList->IASetIndexBuffer(&indexBufferView);
 	commandList->SetPipelineState(pipelineState["basePsoDesc"].Get());
-
-	// 设置根签名，描述符堆以及描述符表
-	commandList->SetGraphicsRootSignature(rootSignature.Get());
-	ID3D12DescriptorHeap* ppHeaps[] = { cbvSrvUavHeap.Get() };
-	commandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
 
 	CD3DX12_GPU_DESCRIPTOR_HANDLE cbvSrvUavHeapHandle(cbvSrvUavHeap->GetGPUDescriptorHandleForHeapStart());
 	CD3DX12_GPU_DESCRIPTOR_HANDLE cbvSrvUavHeapHandleCopy = cbvSrvUavHeapHandle;
@@ -135,16 +122,22 @@ void D3D12RHI::RHIPopulateCommandList()
 		commandList->SetGraphicsRootDescriptorTable(3, cbvSrvUavHeapHandleCopy);
 		commandList->DrawIndexedInstanced((UINT)staticMeshIndicesNums[i], 1, recordIndexStartPosition[i], recondVertexStartPosition[i], 0);
 	}
-	//auto resourceFromTargetToPresent = CD3DX12_RESOURCE_BARRIER::Transition(renderTargets[frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
-	//// 表明后台缓冲现在将被呈现
-	//commandList->ResourceBarrier(1, &resourceFromTargetToPresent);
-	auto x = CD3DX12_RESOURCE_BARRIER::Transition(offScreenResource.Get(),
-		D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
-	commandList->ResourceBarrier(1, &x);
 
+	// 上述过程中将base pass走了一遍，但是其渲染输出结果并不是后台缓冲区，而是离屏表面上（也是一个render target）
+	// 渲染完成后将该资源的状态从target转换到read
+	// 在创建资源的时候已经将资源与描述相互关联起来，所以rtv指向的资源实际上就是offeScreenResource指针所指向的资源
+	// 所以应该将资源offScreenResource创建一个类，与其对应的rtv以及srv关联起来
+	auto resourceFromTargetToRead = CD3DX12_RESOURCE_BARRIER::Transition(offScreenResource.Get(),
+		D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
+	commandList->ResourceBarrier(1, &resourceFromTargetToRead);
+
+	//后处理过程中用到了两个srv以及一个uav
+	//在sobel着色器中用到了一个srv与一个uav，srv作为输入（实质上这个srv与之前的离屏表面指向的物理显存为同一块区域）
+	//只是描述不同罢了，在第一个阶段该区域（也称为资源）被当作RT进行渲染输出
+	//在第二个阶段该区域被作为soble着色器中的输入shader resource
+	//而uav则是sobel运算后的结果输出
 	commandList->SetComputeRootSignature(postProcessRootSignature.Get());
 	commandList->SetPipelineState(pipelineState["sobelPsoDesc"].Get());
-
 	auto handleForPostProcess = postProcessHandleSaved;
 	auto handleForPostProcessUav = postProcessHandleSaved;
 	handleForPostProcess.Offset(2, cbvSrvUavDescriptorSize);
@@ -171,6 +164,7 @@ void D3D12RHI::RHIPopulateCommandList()
 		D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	commandList->ResourceBarrier(1, &resourceFromPresentToTarget);
 
+	// 设置当前的后台缓冲作为输出目标
 	CD3DX12_CPU_DESCRIPTOR_HANDLE currentBackBufferView(rtvHeap->GetCPUDescriptorHandleForHeapStart(), currBackBuffer, rtvDescriptorSize);
 	// Specify the buffers we are going to render to.
 	commandList->OMSetRenderTargets(1, &currentBackBufferView, true, &depthStencilView);
@@ -187,9 +181,9 @@ void D3D12RHI::RHIPopulateCommandList()
 	commandList->DrawInstanced(6, 1, 0, 0);
 
 	// Indicate a state transition on the resource usage.
-	auto y = CD3DX12_RESOURCE_BARRIER::Transition(renderTargets[currBackBuffer].Get(),
+	auto resourceFromTargetToPresent = CD3DX12_RESOURCE_BARRIER::Transition(renderTargets[currBackBuffer].Get(),
 		D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
-	commandList->ResourceBarrier(1, &y);
+	commandList->ResourceBarrier(1, &resourceFromTargetToPresent);
 
 	ThrowIfFailed(commandList->Close());
 }
